@@ -26,4 +26,9 @@ public class ScriptEditorController {
     public ScriptEditorDto.PreviewResponse preview(@RequestBody ScriptEditorDto.PreviewRequest request) {
         return scriptService.previewScript(request);
     }
+    
+    @GetMapping("/load/{scriptId}")
+    public ScriptEditorDto.LoadResponse load(@PathVariable String scriptId) {
+        return scriptService.loadScript(scriptId);
+    }
 }

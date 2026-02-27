@@ -25,9 +25,24 @@ public class GeneratorController {
 
         System.out.println("接收到脚本生成请求，节点数量: " + config.getNodes().size());
 
-        // 4. 直接调用 Kotlin 的 generate 方法
-        String pythonCode = scriptGenerator.generate(config);
+    // 4. 直接调用 Kotlin 的 generate 方法
+        try {
+            return scriptGenerator.generate(config);
+        } catch (Exception e) {
+            return "# Generate Error: " + e.getMessage();
+        }
+    }
 
-        return pythonCode;
+    @Autowired
+    private cn.edu.sdu.software.engine.XmlScriptGenerator xmlScriptGenerator;
+
+    @PostMapping("/xml")
+    public String generateXmlScript(@RequestBody ScriptConfig config) {
+        System.out.println("接收到 XML 脚本生成请求，节点数量: " + config.getNodes().size());
+        try {
+            return xmlScriptGenerator.generate(config);
+        } catch (Exception e) {
+            return "<!-- Generate Error: " + e.getMessage() + " -->";
+        }
     }
 }

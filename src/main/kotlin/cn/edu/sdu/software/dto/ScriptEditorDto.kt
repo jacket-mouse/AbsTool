@@ -30,4 +30,9 @@ class ScriptEditorDto {
     data class PreviewResponse(
         var mermaidCode: String = ""
     )
+
+    data class LoadResponse(
+        var name: String = "",
+        var content: ScriptConfig? = null
+    )
 }

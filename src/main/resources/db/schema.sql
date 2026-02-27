@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `script_info` (
   `script_id` varchar(32) NOT NULL COMMENT '脚本唯一 ID',
   `name` varchar(100) NOT NULL COMMENT '脚本名称',
   `type` varchar(20) NOT NULL COMMENT '类型',
-  `content` text NOT NULL COMMENT '脚本内容',
+  `content` text NOT NULL COMMENT '脚本内容(MinIO路径)',
   `status` varchar(10) NOT NULL COMMENT '状态',
   `creator` varchar(32) DEFAULT NULL COMMENT '创建人 ID',
   `create_time` datetime NOT NULL COMMENT '创建时间',
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS `script_version` (
   `version_id` varchar(32) NOT NULL COMMENT '版本 ID',
   `script_id` varchar(32) NOT NULL COMMENT '关联脚本 ID',
   `version` varchar(20) NOT NULL COMMENT '版本号',
-  `content` text NOT NULL COMMENT '该版本脚本内容',
+  `content` text NOT NULL COMMENT '该版本脚本内容(MinIO路径)',
   `modifier` varchar(32) NULL COMMENT '修改人 ID',
   `modify_time` datetime NOT NULL COMMENT '修改时间',
   `change_log` varchar(500) DEFAULT NULL COMMENT '变更日志',
@@ -91,3 +91,12 @@ CREATE TABLE IF NOT EXISTS `script_exec_log` (
   FOREIGN KEY (`task_id`)
   REFERENCES task_info(task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='脚本执行日志表';
+
+CREATE TABLE IF NOT EXISTS `action_mapping` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `node_type` varchar(50) NOT NULL COMMENT '节点类型',
+  `target_framework` varchar(20) NOT NULL COMMENT '目标框架(Python/XML)',
+  `template_code` text NOT NULL COMMENT '模板代码',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_node_framework` (`node_type`, `target_framework`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='节点到指令扩展映射表';

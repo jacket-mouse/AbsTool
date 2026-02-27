@@ -28,4 +28,20 @@ public interface ScriptService {
      * @return 预览结果包含 mermaidCode
      */
     ScriptEditorDto.PreviewResponse previewScript(ScriptEditorDto.PreviewRequest request);
+
+    ScriptEditorDto.LoadResponse loadScript(String scriptId);
+    
+    /**
+     * 获取脚本列表（分页）
+     * @param request 查询条件
+     * @return 列表结果
+     */
+    cn.edu.sdu.software.dto.ScriptDto.ScriptListResponse getScriptList(cn.edu.sdu.software.dto.ScriptDto.ScriptListRequest request);
+
+    /**
+     * 删除脚本
+     * @param scriptId 脚本ID
+     * @return 删除结果
+     */
+    cn.edu.sdu.software.dto.ScriptDto.DeleteResponse deleteScript(String scriptId);
 }
