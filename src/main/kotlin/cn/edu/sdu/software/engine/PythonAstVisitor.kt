@@ -16,9 +16,8 @@ class PythonAstVisitor(
 
         # 设备初始化
         try:
-            device = connect("127.0.0.1:5555") # 默认连接本地
-            device.wait_for_idle(timeout=10)
-            print("设备连接成功")
+            device = connect() # 默认连接当前连入电脑的设备
+            print("设备连接成功:", device.serial)
         except Exception as e:
             print(f"设备连接失败: {e}")
             exit(1)
@@ -32,7 +31,7 @@ class PythonAstVisitor(
 
     init {
         sb.append(scriptHeader)
-        sb.append("\\n")
+        sb.append("\n\n")
     }
 
     override fun visit(node: SequenceAstNode) {
@@ -40,11 +39,12 @@ class PythonAstVisitor(
             child.accept(this)
         }
         sb.append(scriptFooter)
+        sb.append("\n")
     }
 
     override fun visit(node: ActionAstNode) {
-        sb.append("        # 节点：${node.id} (${node.type})\n")
-        sb.append("        try:\n")
+        sb.append("# 节点：${node.id} (${node.type})\n")
+        sb.append("try:\n")
         
         // 尝试从数据库获取扩展映射
         val extendedMapping = mappingService?.getMapping(node.type, "Python")
@@ -55,11 +55,11 @@ class PythonAstVisitor(
             getBuiltInActionCode(node)
         }
         
-        sb.append("            $codeLine\n")
-        sb.append("            print(\"节点${node.id}执行成功\")\n")
-        sb.append("        except Exception as e:\n")
-        sb.append("            print(f\"节点${node.id}执行失败: {str(e)}\")\n")
-        sb.append("            raise\n\n")
+        sb.append("    $codeLine\n")
+        sb.append("    print(\"节点${node.id}执行成功\")\n")
+        sb.append("except Exception as e:\n")
+        sb.append("    print(f\"节点${node.id}执行失败: {str(e)}\")\n")
+        sb.append("    raise\n\n")
     }
 
     private fun getBuiltInActionCode(node: ActionAstNode): String {
