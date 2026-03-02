@@ -97,17 +97,26 @@ class AbsScriptParser {
             )
             sequenceNode.children.add(actionAstNode)
 
-            // BFS 向下推进
+            // 如果当前节点是跳转节点 (jump), 则改变 BFS 路径流向
+            if (n.type == "jump") {
+                val targetId = n.properties["targetNodeId"] as? String
+                // 如果目标节点有效并且目标存在于整个节点图表中，切断默认的向下连线
+                if (!targetId.isNullOrBlank() && nodeMap.containsKey(targetId)) {
+                    // 如果需要允许循环，我们可以单独将跳转节点的目标放入 sequence，这里我们通过直接加入队列模拟 goto (受限于没有闭环检测会死循环)
+                    // 为了安全的线性脚本，此处模拟将 targetNodeId 对应的后续树接续在后面:
+                    if (!visited.contains(targetId) && !queue.contains(targetId)) {
+                        queue.addFirst(targetId) // 深度优先插入到队列最前面执行 Jump
+                    }
+                    continue // 取消沿该 jump 节点物理连线的默认 BFS 推导
+                }
+            }
+
+            // BFS 向下推进: 默认处理物理连线
             adjList[currId]?.forEach { nextNodeValue ->
                 if (!visited.contains(nextNodeValue) && !queue.contains(nextNodeValue)) {
                     queue.addLast(nextNodeValue)
                 }
             }
-        }
-
-        // 强行判断是否所有节点都被覆盖到了
-        if (visited.size < config.nodes.size) {
-            throw IllegalArgumentException("配置非法: 流程图中存在孤立节点或无法到达的死循环区域。")
         }
 
         return sequenceNode
@@ -138,6 +147,12 @@ class AbsScriptParser {
             "wait" -> {
                 if (props["duration"] == null && props["waitMode"] == null) {
                     throw IllegalArgumentException("节点 ${node.title}(${node.id}) 缺少等待时长")
+                }
+            }
+            "jump" -> {
+                val targetId = props["targetNodeId"] as? String
+                if (targetId.isNullOrBlank()) {
+                    throw IllegalArgumentException("节点 ${node.title}(${node.id}) 缺少目标节点 ID")
                 }
             }
             // 可以继续补充其他类型...

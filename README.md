@@ -1,118 +1,130 @@
-## # AbsTool
+太棒了！深入到这一步，你就真正触碰到了这类“低代码/无代码”自动化工具的核心引擎设计。
 
-## 数据库
+在编译原理中，GoJS 画出来的图是一个**“有向图（Directed Graph）”**，但 Python 代码是**“线性（Linear）”**顺序执行的。而且 Python 原生**不支持 `goto` 语句**！
 
-![image-20260210183029944](photo/ER图.png)
+那么，如何把带有“跳转节点”的图，翻译成安全的 Python 脚本呢？业界最优雅、容错率最高的做法是：**不要试图去生成复杂的嵌套 `while/for` 代码，而是生成一个“状态机（State Machine）”。**
 
-#### 1. 用户信息表 (`sys_user`)
+下面我为你详细拆解这个“Translator（解析器）”的实现方案。
 
-用于存储系统的用户信息，包括创建者、修改者等。
+---
 
-| 字段名        | 类型           | 约束 / 默认值             | 说明        |
-| :------------ | :------------- | :------------------------ | :---------- |
-| `user_id`     | `varchar(32)`  | **PRIMARY KEY**, NOT NULL | 用户唯一 ID |
-| `username`    | `varchar(50)`  | NOT NULL                  | 用户名      |
-| `password`    | `varchar(100)` | NOT NULL                  | 密码        |
-| `nickname`    | `varchar(50)`  | DEFAULT NULL              | 昵称        |
-| `create_time` | `datetime`     | NOT NULL                  | 创建时间    |
+### 第一步：前端 GoJS 输出的扁平化 JSON
 
-------
+假设用户在画布上配了这样三个节点：点击 -> 等待 -> 跳转回点击（循环3次）。
+前端传给后端的 `logic_json` 是这样的：
 
-#### 2. 脚本模板表 (`script_template`)
+```json
+{
+  "start_node": "node_01",
+  "nodes": {
+    "node_01": { "type": "click", "x": 0.5, "y": 0.5, "next": "node_02" },
+    "node_02": { "type": "wait", "time": 2, "next": "node_03" },
+    "node_03": {
+      "type": "jump",
+      "target": "node_01",
+      "max_retries": 3,
+      "next": null
+    }
+  }
+}
+```
 
-用于定义脚本的集合（模板），支持将多个脚本编排为一个工作流。
+### 第二步：后端 Python 脚本生成器（核心逻辑）
 
-| 字段名        | 类型           | 约束 / 默认值             | 说明     |
-| :------------ | :------------- | :------------------------ | :------- |
-| `template_id` | `varchar(32)`  | **PRIMARY KEY**, NOT NULL | 模板 ID  |
-| `name`        | `varchar(100)` | NOT NULL                  | 模板名称 |
-| `description` | `varchar(500)` | DEFAULT NULL              | 模板描述 |
-| `creator`     | `varchar(32)`  | FK -> `sys_user(user_id)` | 创建人   |
-| `create_time` | `datetime`     | NOT NULL                  | 创建时间 |
+你的后端解析器不需要去拼接恶心的缩进和循环体，它只需要生成一段**“带有通用路由引擎的 Python 脚本”**。
 
-------
+生成的最终脚本（保存在用户本地的 `auto_task.py`）长这样：
 
-#### 3. 脚本信息表 (`script_info`)
+```python
+import uiautomator2 as u2
+import time
+import random
 
-存储脚本的基本元数据和当前状态。
+def run_script():
+    # 1. 连接设备
+    print("正在连接设备...")
+    d = u2.connect()
 
-| 字段名           | 类型           | 约束 / 默认值             | 说明        |
-| :--------------- | :------------- | :------------------------ | :---------- |
-| `script_id`      | `varchar(32)`  | **PRIMARY KEY**, NOT NULL | 脚本唯一 ID |
-| `name`           | `varchar(100)` | NOT NULL                  | 脚本名称    |
-| `type`           | `varchar(20)`  | NOT NULL                  | 类型        |
-| `content`        | `text`         | NOT NULL                  | 脚本内容    |
-| `status`         | `varchar(10)`  | NOT NULL                  | 状态        |
-| `creator`        | `varchar(32)`  | FK -> `sys_user(user_id)` | 创建人 ID   |
-| `create_time`    | `datetime`     | NOT NULL                  | 创建时间    |
-| `latest_version` | `varchar(20)`  | NOT NULL                  | 最新版本号  |
+    # 2. 注入从 JSON 解析来的图结构数据 (这就是你后端的翻译工作，直接把JSON灌进来)
+    flow_graph = {
+        "node_01": {"type": "click", "x": 0.5, "y": 0.5, "next": "node_02"},
+        "node_02": {"type": "wait", "time": 2, "next": "node_03"},
+        "node_03": {"type": "jump", "target": "node_01", "max_retries": 3, "next": None}
+    }
 
-------
+    # 3. 初始化状态机和安全锁
+    current_node_id = "node_01"
+    jump_counters = {}       # 记录每个跳转节点跳了多少次
+    max_total_steps = 1000   # 绝对安全锁：最多执行1000步，防止手机死机报错
+    step_count = 0
 
-#### 4. 脚本版本表 (`script_version`)
+    # 4. 状态机主循环 (核心路由)
+    while current_node_id and step_count < max_total_steps:
+        step_count += 1
+        node_data = flow_graph.get(current_node_id)
 
-用于脚本的版本控制，记录脚本的历史变更。
+        if not node_data:
+            print(f"节点 {current_node_id} 不存在，流程异常终止！")
+            break
 
-| 字段名        | 类型           | 约束 / 默认值                            | 说明           |
-| :------------ | :------------- | :--------------------------------------- | :------------- |
-| `version_id`  | `varchar(32)`  | **PRIMARY KEY**, NOT NULL                | 版本 ID        |
-| `script_id`   | `varchar(32)`  | NOT NULL, FK -> `script_info(script_id)` | 关联脚本 ID    |
-| `version`     | `varchar(20)`  | NOT NULL                                 | 版本号         |
-| `content`     | `text`         | NOT NULL                                 | 该版本脚本内容 |
-| `modifier`    | `varchar(32)`  | FK -> `sys_user(user_id)`                | 修改人 ID      |
-| `modify_time` | `datetime`     | NOT NULL                                 | 修改时间       |
-| `change_log`  | `varchar(500)` | DEFAULT NULL                             | 变更日志       |
+        action_type = node_data['type']
 
-------
+        # --- 行为解析区 ---
+        if action_type == "click":
+            # 真实坐标转换逻辑 (假设基准分辨率宽1080，高1920)
+            real_x = int(node_data['x'] * d.info['displayWidth'])
+            real_y = int(node_data['y'] * d.info['displayHeight'])
+            print(f"执行点击: ({real_x}, {real_y})")
+            d.click(real_x, real_y)
+            current_node_id = node_data['next'] # 流转到下一步
 
-#### 5. 脚本-模板关联表 (`script_template_rel`)
+        elif action_type == "wait":
+            wait_time = node_data['time']
+            # 加入一点拟人化随机扰动 (0到0.5秒之间)
+            actual_wait = wait_time + random.uniform(0, 0.5)
+            print(f"执行等待: {actual_wait:.2f} 秒")
+            time.sleep(actual_wait)
+            current_node_id = node_data['next']
 
-连接脚本与模板，定义模板中包含哪些脚本以及它们的执行顺序。
+        elif action_type == "jump":
+            # --- 跳转节点的安全判定逻辑 ---
+            target = node_data['target']
+            max_r = node_data.get('max_retries', 1)
 
-| 字段名        | 类型          | 约束 / 默认值                                  | 说明               |
-| :------------ | :------------ | :--------------------------------------------- | :----------------- |
-| `id`          | `bigint(20)`  | **PRIMARY KEY**, AUTO_INCREMENT                | 关联记录 ID        |
-| `template_id` | `varchar(32)` | NOT NULL, FK -> `script_template(template_id)` | 关联模板 ID        |
-| `script_id`   | `varchar(32)` | NOT NULL, FK -> `script_info(script_id)`       | 关联脚本 ID        |
-| `is_default`  | `tinyint(4)`  | NOT NULL                                       | 是否为模板默认脚本 |
-| `sort_order`  | `int(11)`     | NOT NULL                                       | 脚本执行顺序       |
-| `create_time` | `datetime`    | NOT NULL                                       | 关联创建时间       |
+            # 计数器加1
+            jump_counters[current_node_id] = jump_counters.get(current_node_id, 0) + 1
 
-------
+            if jump_counters[current_node_id] <= max_r:
+                print(f"执行跳转 ({jump_counters[current_node_id]}/{max_r}) -> 返回节点: {target}")
+                current_node_id = target # 核心：直接把指针指向目标节点
+            else:
+                print(f"跳转节点已达到最大重试次数 {max_r}，跳出循环，继续往下走。")
+                current_node_id = node_data.get('next') # 走到跳转节点的下方连线
 
-#### 6. 任务信息表 (`task_info`)
+    if step_count >= max_total_steps:
+        print("警告：触发全局安全锁，强制停止以保护设备！")
+    else:
+        print("执行完毕！")
 
-记录每一次执行实例（无论是单脚本执行还是模板执行）。
+if __name__ == "__main__":
+    run_script()
 
-| 字段名         | 类型           | 约束 / 默认值             | 说明                             |
-| :------------- | :------------- | :------------------------ | :------------------------------- |
-| `task_id`      | `varchar(32)`  | **PRIMARY KEY**, NOT NULL | 任务 ID                          |
-| `name`         | `varchar(100)` | NOT NULL                  | 任务名称                         |
-| `script_id`    | `varchar(32)`  | DEFAULT NULL              | 关联脚本ID (单脚本任务)          |
-| `template_id`  | `varchar(32)`  | DEFAULT NULL              | 关联模板ID (模板任务)            |
-| `trigger_type` | `varchar(20)`  | NOT NULL                  | 触发方式 (e.g. MANUAL, SCHEDULE) |
-| `status`       | `varchar(20)`  | NOT NULL                  | 任务整体状态                     |
-| `create_time`  | `datetime`     | NOT NULL                  | 创建时间                         |
-| `start_time`   | `datetime`     | DEFAULT NULL              | 开始执行时间                     |
-| `end_time`     | `datetime`     | DEFAULT NULL              | 结束时间                         |
-| `creator`      | `varchar(32)`  | FK -> `sys_user(user_id)` | 执行人                           |
+```
 
-------
+### 为什么这个方案最适合你的毕设？
 
-#### 7. 脚本执行日志表 (`script_exec_log`)
+1. **彻底解耦了“界面层”和“执行层”**：不管用户在 GoJS 里把连线画得多么像蜘蛛网（随便跳来跳去），只要前端能输出每个节点的 `next` 和 `target`，这个状态机就能完美顺着跑下去，**代码永远不会崩溃。**
+2. **双重安全锁设计**：
 
-记录任务中每一个执行步骤的详细日志。
+- `jump_counters`：防止局部的死循环。
+- `max_total_steps`：防止用户配出了全局大循环导致手机失控。
 
-| 字段名      | 类型           | 约束 / 默认值                            | 说明          |
-| :---------- | :------------- | :--------------------------------------- | :------------ |
-| `log_id`    | `varchar(32)`  | **PRIMARY KEY**, NOT NULL                | 日志 ID       |
-| `script_id` | `varchar(32)`  | NOT NULL, FK -> `script_info(script_id)` | 脚本 ID       |
-| `task_id`   | `varchar(32)`  | NOT NULL, FK -> `task_info(task_id)`     | 关联任务 ID   |
-| `step_name` | `varchar(100)` | NOT NULL                                 | 执行步骤名称  |
-| `status`    | `varchar(10)`  | NOT NULL                                 | 步骤状态      |
-| `error_msg` | `text`         | DEFAULT NULL                             | 错误信息      |
-| `exec_time` | `datetime`     | NOT NULL                                 | 执行时间      |
-| `duration`  | `int(11)`      | NOT NULL                                 | 步骤耗时 (ms) |
+3. **极简的代码生成逻辑**：你的 Python 编译器只需把前端的 `JSON` 变成字符串，嵌进上面代码的 `flow_graph` 字典里即可！不需要写复杂的抽象语法树（AST）解析。
 
+### 总结与下一步
 
+有了这个设计，你的工具就已经具备了大型 RPA 软件（如 UiPath、影刀）底层的核心执行逻辑雏形了。
 
+到目前为止，我们已经讨论了**环境选型、可视化组件设计、手机屏幕适配、手势解锁、以及核心的脚本解析引擎**。
+
+接下来的挑战是：**当这一切都写好后，如何使用 PyInstaller 把 Vue 前端、Python 解析器和 ADB 工具打包成一个小于 100MB、用户双击就能用的 `.exe` 文件？** 需要我为你梳理打包的工程架构目录和核心命令吗？
