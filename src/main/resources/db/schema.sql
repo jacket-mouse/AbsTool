@@ -91,12 +91,3 @@ CREATE TABLE IF NOT EXISTS `script_exec_log` (
   FOREIGN KEY (`task_id`)
   REFERENCES task_info(task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='脚本执行日志表';
-
-CREATE TABLE IF NOT EXISTS `action_mapping` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `node_type` varchar(50) NOT NULL COMMENT '节点类型',
-  `target_framework` varchar(20) NOT NULL COMMENT '目标框架(Python/XML)',
-  `template_code` text NOT NULL COMMENT '模板代码',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_node_framework` (`node_type`, `target_framework`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='节点到指令扩展映射表';

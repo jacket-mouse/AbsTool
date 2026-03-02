@@ -99,6 +99,11 @@
             <artifactId>minio</artifactId>
             <version>8.5.7</version>
         </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
 
