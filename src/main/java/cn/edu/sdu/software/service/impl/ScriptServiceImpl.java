@@ -10,7 +10,6 @@ import cn.edu.sdu.software.model.ScriptConfig;
 import cn.edu.sdu.software.model.ScriptNode;
 import cn.edu.sdu.software.service.MinioFileService;
 import cn.edu.sdu.software.service.ScriptService;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,7 +24,6 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,38 +54,103 @@ public class ScriptServiceImpl implements ScriptService {
         ScriptConfig content = request.getContent();
         String currentUser = UserContext.getUserId();
 
-        ScriptInfo scriptInfo = scriptInfoMapper.selectById(scriptId);
+        boolean isNew = false;
+        ScriptInfo scriptInfo = null;
+
+        if (scriptId != null && !scriptId.isEmpty() && !scriptId.startsWith("script-")) {
+            scriptInfo = scriptInfoMapper.selectById(scriptId);
+        }
+
         if (scriptInfo == null) {
-            // 如果不存在则新建
+            isNew = true;
             scriptInfo = new ScriptInfo();
+            // 自增 ScriptId
+            List<ScriptInfo> allScripts = scriptInfoMapper.selectList(new QueryWrapper<>());
+            int maxId = 0;
+            for (ScriptInfo info : allScripts) {
+                try {
+                    int id = Integer.parseInt(info.getScriptId());
+                    if (id > maxId) maxId = id;
+                } catch (NumberFormatException ignored) {}
+            }
+            scriptId = String.valueOf(maxId + 1);
+            
             scriptInfo.setScriptId(scriptId);
             scriptInfo.setCreateTime(LocalDateTime.now());
-            scriptInfo.setLatestVersion("V1.0");
+            scriptInfo.setLatestVersion("1");
             scriptInfo.setCreator(currentUser);
-            scriptInfo.setName("脚本-" + scriptId);
+            String providedName = request.getScriptName();
+            scriptInfo.setName(StringUtils.hasText(providedName) ? providedName : "脚本-" + scriptId);
             scriptInfo.setType("GENERAL"); // 默认类型
             scriptInfo.setStatus("ENABLED"); // 默认状态
         }
 
-        // 计算新版本号
+        // 计算新版本号：以数字递增
         String currentVersion = scriptInfo.getLatestVersion();
-        if (currentVersion == null || currentVersion.isEmpty()) {
-            currentVersion = "V1";
+        if (currentVersion == null || currentVersion.isEmpty() || currentVersion.startsWith("V")) {
+            currentVersion = "0"; // fallback if old version format
         }
         
-        String newVersion = incrementVersion(currentVersion);
+        String newVersionStr = "1";
+        try {
+            int v = Integer.parseInt(currentVersion);
+            newVersionStr = String.valueOf(v + 1);
+        } catch (NumberFormatException ignored) {}
+        
+        if (isNew) {
+            newVersionStr = "1";
+        }
+
+        // 节点 ID 重写为 脚本ID-节点编号，同步更新边和 groupKey
+        if (content != null && content.getNodes() != null) {
+            // 第一步：构建 oldId -> newId 映射
+            java.util.Map<String, String> idRemap = new java.util.HashMap<>();
+            for (ScriptNode node : content.getNodes()) {
+                String oldId = node.getId();
+                if (oldId == null || oldId.isEmpty()) continue;
+                if (!oldId.startsWith(scriptId + "-")) {
+                    String[] parts = oldId.split("-");
+                    String baseId = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+                    String newId = scriptId + "-" + baseId;
+                    if (!oldId.equals(newId)) {
+                        idRemap.put(oldId, newId);
+                    }
+                }
+            }
+            // 第二步：应用映射到节点 ID、连线 from/to、以及 groupKey
+            for (ScriptNode node : content.getNodes()) {
+                String oldId = node.getId();
+                if (idRemap.containsKey(oldId)) {
+                    node.setId(idRemap.get(oldId));
+                }
+                // 同步更新 groupKey（子节点所属的 Group ID 也需要重写）
+                if (node.getGroupKey() != null && idRemap.containsKey(node.getGroupKey())) {
+                    node.setGroupKey(idRemap.get(node.getGroupKey()));
+                }
+            }
+            if (content.getConnections() != null) {
+                for (Connection conn : content.getConnections()) {
+                    if (conn.getFrom() != null && idRemap.containsKey(conn.getFrom())) {
+                        conn.setFrom(idRemap.get(conn.getFrom()));
+                    }
+                    if (conn.getTo() != null && idRemap.containsKey(conn.getTo())) {
+                        conn.setTo(idRemap.get(conn.getTo()));
+                    }
+                }
+            }
+        }
 
         try {
             String contentJson = objectMapper.writeValueAsString(content);
             
             // 1. 上传配置 JSON 到 MinIO
-            String fileName = "scripts/" + scriptId + "/" + newVersion + ".json";
+            String fileName = "scripts/" + scriptId + "/" + newVersionStr + ".json";
             minioFileService.uploadFile(fileName, contentJson, "application/json");
 
             // 2. 自动生成并上传 Python 脚本
             try {
                 String pythonCode = pythonScriptGenerator.generate(content);
-                String pyFileName = "scripts/" + scriptId + "/" + newVersion + ".py";
+                String pyFileName = "scripts/" + scriptId + "/" + newVersionStr + ".py";
                 minioFileService.uploadFile(pyFileName, pythonCode, "text/x-python");
                 System.out.println("成功生成并存储 Python 脚本至: " + pyFileName);
             } catch (Exception pyErr) {
@@ -97,7 +160,7 @@ public class ScriptServiceImpl implements ScriptService {
             // 3. 自动生成并上传 XML 测试用例
             try {
                 String xmlCode = xmlScriptGenerator.generate(content);
-                String xmlFileName = "scripts/" + scriptId + "/" + newVersion + ".xml";
+                String xmlFileName = "scripts/" + scriptId + "/" + newVersionStr + ".xml";
                 minioFileService.uploadFile(xmlFileName, xmlCode, "application/xml");
                 System.out.println("成功生成并存储 XML 脚本至: " + xmlFileName);
             } catch (Exception xmlErr) {
@@ -106,9 +169,14 @@ public class ScriptServiceImpl implements ScriptService {
 
             // 更新 ScriptInfo，存储文件路径
             scriptInfo.setContent(fileName);
-            scriptInfo.setLatestVersion(newVersion);
+            scriptInfo.setLatestVersion(newVersionStr);
             
-            if (scriptInfoMapper.selectById(scriptId) == null) {
+            String providedName = request.getScriptName();
+            if (StringUtils.hasText(providedName)) {
+                scriptInfo.setName(providedName);
+            }
+            
+            if (isNew) {
                 scriptInfoMapper.insert(scriptInfo);
             } else {
                 scriptInfoMapper.updateById(scriptInfo);
@@ -116,35 +184,32 @@ public class ScriptServiceImpl implements ScriptService {
 
             // 插入 ScriptVersion
             ScriptVersion scriptVersion = new ScriptVersion();
-            scriptVersion.setVersionId(UUID.randomUUID().toString().replace("-", ""));
+            // Version ID 也使用自增：获取最大的 version_id (如果是数字)
+            List<ScriptVersion> allVersions = scriptVersionMapper.selectList(new QueryWrapper<>());
+            int maxVersionId = 0;
+            for (ScriptVersion info : allVersions) {
+                try {
+                    int id = Integer.parseInt(info.getVersionId());
+                    if (id > maxVersionId) maxVersionId = id;
+                } catch (NumberFormatException ignored) {}
+            }
+            scriptVersion.setVersionId(String.valueOf(maxVersionId + 1));
             scriptVersion.setScriptId(scriptId);
-            scriptVersion.setVersion(newVersion);
+            scriptVersion.setVersion(newVersionStr);
             scriptVersion.setContent(fileName); // 存储 JSON 文件路径
             scriptVersion.setModifyTime(LocalDateTime.now());
             scriptVersion.setModifier(currentUser); // 设置修改人
+            scriptVersion.setChangeLog(request.getChangelog()); // 记录变更日志
+            
             
             scriptVersionMapper.insert(scriptVersion);
 
-            return new ScriptEditorDto.SaveResponse(true, newVersion);
+            return new ScriptEditorDto.SaveResponse(true, scriptId, newVersionStr, "保存成功");
 
         } catch (Exception e) {
             e.printStackTrace();
-            // 临时：在响应中返回具体错误信息以便调试
-            return new ScriptEditorDto.SaveResponse(false, "Error: " + e.getMessage());
+            return new ScriptEditorDto.SaveResponse(false, scriptId, currentVersion, "Error: " + e.getMessage());
         }
-    }
-
-    private String incrementVersion(String version) {
-        // 简单实现：V1 -> V2, V1.0 -> V1.1
-        if (version.startsWith("V")) {
-            try {
-                int v = Integer.parseInt(version.substring(1));
-                return "V" + (v + 1);
-            } catch (NumberFormatException e) {
-                // ignore
-            }
-        }
-        return "V" + System.currentTimeMillis(); // Fallback
     }
 
     @Override
@@ -252,6 +317,55 @@ public class ScriptServiceImpl implements ScriptService {
     }
 
     @Override
+    public ScriptEditorDto.LoadResponse loadScriptVersion(String scriptId, String versionId) {
+        System.out.println("Loading script version: " + scriptId + " v=" + versionId);
+        ScriptInfo info = scriptInfoMapper.selectById(scriptId);
+        if (info == null) {
+            return new ScriptEditorDto.LoadResponse("", null);
+        }
+
+        ScriptConfig config = null;
+        try {
+            QueryWrapper<ScriptVersion> query = new QueryWrapper<>();
+            query.eq("script_id", scriptId);
+            query.eq("version_id", versionId);
+            ScriptVersion v = scriptVersionMapper.selectOne(query);
+
+            if (v != null && StringUtils.hasText(v.getContent())) {
+                String jsonContent = minioFileService.getFileContent(v.getContent());
+                if (StringUtils.hasText(jsonContent)) {
+                    config = objectMapper.readValue(jsonContent, ScriptConfig.class);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        if (config == null) {
+            config = new ScriptConfig(new ArrayList<>(), new ArrayList<>());
+        }
+        return new ScriptEditorDto.LoadResponse(info.getName(), config);
+    }
+
+    @Override
+    public ScriptEditorDto.HistoryResponse getScriptHistory(String scriptId) {
+        QueryWrapper<ScriptVersion> query = new QueryWrapper<>();
+        query.eq("script_id", scriptId);
+        query.orderByDesc("modify_time");
+        List<ScriptVersion> versions = scriptVersionMapper.selectList(query);
+        
+        List<ScriptEditorDto.HistoryVersionDto> list = new ArrayList<>();
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        for (ScriptVersion v : versions) {
+            String cTime = v.getModifyTime() != null ? v.getModifyTime().format(formatter) : "";
+            // Simplified summary
+            String summary = StringUtils.hasText(v.getChangeLog()) ? v.getChangeLog() : "无提要";
+            list.add(new ScriptEditorDto.HistoryVersionDto(v.getVersionId(), v.getVersion(), cTime, summary));
+        }
+        return new ScriptEditorDto.HistoryResponse(list);
+    }
+
+    @Override
     public ScriptDto.ScriptListResponse getScriptList(ScriptDto.ScriptListRequest request) {
         Page<ScriptInfo> page = new Page<>(request.getPage(), request.getSize());
         QueryWrapper<ScriptInfo> query = new QueryWrapper<>();
@@ -264,6 +378,10 @@ public class ScriptServiceImpl implements ScriptService {
         
         if (StringUtils.hasText(request.getKeyword())) {
             query.like("name", request.getKeyword());
+        }
+        
+        if (StringUtils.hasText(request.getType())) {
+            query.eq("type", request.getType());
         }
         
         // 默认按时间倒序
@@ -308,6 +426,28 @@ public class ScriptServiceImpl implements ScriptService {
         } catch (Exception e) {
             e.printStackTrace();
             return new ScriptDto.DeleteResponse(false, "删除失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public ScriptDto.UpdateResponse updateScript(ScriptDto.UpdateRequest request) {
+        try {
+            ScriptInfo info = scriptInfoMapper.selectById(request.getScriptId());
+            if (info != null) {
+                if (StringUtils.hasText(request.getName())) {
+                    info.setName(request.getName());
+                }
+                if (StringUtils.hasText(request.getType())) {
+                    info.setType(request.getType());
+                }
+                scriptInfoMapper.updateById(info);
+                return new ScriptDto.UpdateResponse(true, "更新成功");
+            }
+            return new ScriptDto.UpdateResponse(false, "脚本未找到");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ScriptDto.UpdateResponse(false, "更新失败: " + e.getMessage());
         }
     }
 }

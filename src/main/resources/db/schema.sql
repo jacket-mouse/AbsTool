@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS `task_info` (
   `script_id` varchar(32) DEFAULT NULL COMMENT '关联脚本ID',
   `template_id` varchar(32) DEFAULT NULL COMMENT '关联模板ID',
   `trigger_type` varchar(20) NOT NULL COMMENT '触发方式',
+  `cron_expression` varchar(100) DEFAULT NULL COMMENT 'Cron定时表达式',
   `status` varchar(20) NOT NULL COMMENT '任务整体状态',
   `create_time` datetime NOT NULL COMMENT '创建时间',
   `start_time` datetime DEFAULT NULL COMMENT '开始执行时间',

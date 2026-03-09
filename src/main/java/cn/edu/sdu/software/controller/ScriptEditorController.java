@@ -28,7 +28,17 @@ public class ScriptEditorController {
     }
     
     @GetMapping("/load/{scriptId}")
-    public ScriptEditorDto.LoadResponse load(@PathVariable String scriptId) {
+    public ScriptEditorDto.LoadResponse load(@PathVariable("scriptId") String scriptId) {
         return scriptService.loadScript(scriptId);
+    }
+
+    @GetMapping("/load/{scriptId}/{versionId}")
+    public ScriptEditorDto.LoadResponse loadVersion(@PathVariable("scriptId") String scriptId, @PathVariable("versionId") String versionId) {
+        return scriptService.loadScriptVersion(scriptId, versionId);
+    }
+
+    @GetMapping("/history/{scriptId}")
+    public ScriptEditorDto.HistoryResponse getHistory(@PathVariable("scriptId") String scriptId) {
+        return scriptService.getScriptHistory(scriptId);
     }
 }

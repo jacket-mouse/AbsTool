@@ -18,7 +18,12 @@ public class ScriptController {
     }
     
     @DeleteMapping("/delete/{scriptId}")
-    public ScriptDto.DeleteResponse delete(@PathVariable String scriptId) {
+    public ScriptDto.DeleteResponse delete(@PathVariable("scriptId") String scriptId) {
         return scriptService.deleteScript(scriptId);
+    }
+
+    @PostMapping("/update")
+    public ScriptDto.UpdateResponse update(@RequestBody ScriptDto.UpdateRequest request) {
+        return scriptService.updateScript(request);
     }
 }

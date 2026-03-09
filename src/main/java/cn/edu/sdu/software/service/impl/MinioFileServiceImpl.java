@@ -4,7 +4,6 @@ import cn.edu.sdu.software.service.MinioFileService;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
-import io.minio.StatObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.BucketExistsArgs;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +58,7 @@ public class MinioFileServiceImpl implements MinioFileService {
                     .object(fileName)
                     .build()
             );
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            return org.springframework.util.StreamUtils.copyToString(stream, StandardCharsets.UTF_8);
         } catch (Exception e) {
             e.printStackTrace();
             return null;

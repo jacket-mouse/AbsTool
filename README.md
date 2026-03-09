@@ -1,83 +1,109 @@
-现在脚本解析的思路为
+在可视化编程和 RPA（机器人流程自动化）领域，实现脚本与脚本之间的逻辑复用，最标准、最优雅的做法是引入**“子流程（Sub-flow / Sub-script）”节点**。
 
-1. 首先将前端传回的 Json 格式的字符串进行简化，将一些没用的属性（如位置信息）删除
-2. 将上述简化过的字符串嵌入下面的 Python 脚本（仍不完善，需要完善具体操作的 Python 代码）中，生成最终的 Python 脚本，之后前端脚本若发生修改，则只需更改 Python 脚本中的嵌入字符串即可
+这就像在编程中“封装一个函数”然后在别处“调用这个函数”一样。
 
-```python
-import uiautomator2 as u2
-import time
-import random
+以下是将其落地到你的 Vue + GoJS + Python 架构中的完整设计方案：
 
-def run_script():
-    # 1. 连接设备
-    print("正在连接设备...")
-    d = u2.connect()
+### 一、 核心概念：“子脚本节点” (Sub-Script Node)
 
-    # 2. 注入从 JSON 解析来的图结构数据 (这就是你后端的翻译工作，直接把JSON灌进来)
-    flow_graph = {
-        "node_01": {"type": "click", "x": 0.5, "y": 0.5, "next": "node_02"},
-        "node_02": {"type": "wait", "time": 2, "next": "node_03"},
-        "node_03": {"type": "jump", "target": "node_01", "max_retries": 3, "next": None}
-    }
+在画布上，你不应该通过复制粘贴几十个节点来实现复用（那叫代码冗余），而是提供一个特殊的动作节点，名叫 **“调用子脚本”**。
 
-    # 3. 初始化状态机和安全锁
-    current_node_id = "node_01"
-    jump_counters = {}       # 记录每个跳转节点跳了多少次
-    max_total_steps = 1000   # 绝对安全锁：最多执行1000步，防止手机死机报错
-    step_count = 0
+- **视觉体现**：在 GoJS 画布中，这个节点可以设计得比普通节点更宽大，图标使用类似“文件夹”或“嵌套方块”的样子，背景色区分开（比如深蓝色）。节点上直接显示被调用脚本的名称（例如：`[调用] 淘宝自动登录`）。
+- **交互体现**：当用户点击这个节点时，右侧的属性面板弹出一个下拉框，下拉框的数据源是**数据库中其他已保存的脚本列表**。用户从中选择一个即可。
 
-    # 4. 状态机主循环 (核心路由)
-    while current_node_id and step_count < max_total_steps:
-        step_count += 1
-        node_data = flow_graph.get(current_node_id)
+### 二、 数据结构与依赖打包 (JSON)
 
-        if not node_data:
-            print(f"节点 {current_node_id} 不存在，流程异常终止！")
-            break
+当用户配置好并保存时，这个节点在 `logic_json` 中的结构非常简单：
 
-        action_type = node_data['type']
+```json
+{
+  "node_888": {
+    "type": "sub_script",
+    "targetScriptId": "script_login_001",
+    "scriptName": "淘宝自动登录",
+    "next": "node_889"
+  }
+}
+```
 
-        # --- 行为解析区 ---
-        if action_type == "click":
-            # 真实坐标转换逻辑 (假设基准分辨率宽1080，高1920)
-            real_x = int(node_data['x'] * d.info['displayWidth'])
-            real_y = int(node_data['y'] * d.info['displayHeight'])
-            print(f"执行点击: ({real_x}, {real_y})")
-            d.click(real_x, real_y)
-            current_node_id = node_data['next'] # 流转到下一步
+**后端（Java）的关键处理：打包依赖**
+当用户点击“运行”主脚本时，Java 后端不能只把主脚本的 JSON 发给 Python。Java 需要做一个“依赖收集”：
 
-        elif action_type == "wait":
-            wait_time = node_data['time']
-            # 加入一点拟人化随机扰动 (0到0.5秒之间)
-            actual_wait = wait_time + random.uniform(0, 0.5)
-            print(f"执行等待: {actual_wait:.2f} 秒")
-            time.sleep(actual_wait)
-            current_node_id = node_data['next']
+1. 扫描主脚本，发现它引用了 `script_login_001`。
+2. 去数据库查出 `script_login_001` 的 `logic_json`。
+3. 把主图和所有的子图打包成一个大字典发给 Python 引擎。
 
-        elif action_type == "jump":
-            # --- 跳转节点的安全判定逻辑 ---
-            target = node_data['target']
-            max_r = node_data.get('max_retries', 1)
+发给 Python 的数据结构应该是这样的：
 
-            # 计数器加1
-            jump_counters[current_node_id] = jump_counters.get(current_node_id, 0) + 1
-
-            if jump_counters[current_node_id] <= max_r:
-                print(f"执行跳转 ({jump_counters[current_node_id]}/{max_r}) -> 返回节点: {target}")
-                current_node_id = target # 核心：直接把指针指向目标节点
-            else:
-                print(f"跳转节点已达到最大重试次数 {max_r}，跳出循环，继续往下走。")
-                current_node_id = node_data.get('next') # 走到跳转节点的下方连线
-
-    if step_count >= max_total_steps:
-        print("警告：触发全局安全锁，强制停止以保护设备！")
-    else:
-        print("执行完毕！")
-
-if __name__ == "__main__":
-    run_script()
+```json
+{
+  "main_flow": { "start_node": "...", "nodes": { ... } },
+  "sub_flows": {
+    "script_login_001": { "start_node": "...", "nodes": { ... } }
+  }
+}
 
 ```
 
-3. 之后对于脚本执行和调试，则通过检测脚本执行到哪一个节点，在前端进行可视化展示（该展示不包括Python 脚本中的具体操作，仅包括脚本执行到哪一个节点）
+### 三、 执行引擎的改造：引入“调用栈 (Call Stack)”
+
+为了让你的 Python 状态机能执行子脚本，并且执行完后还能**“活着回来”**继续往下走，你需要对之前的路由引擎做一次升维：引入**递归**或**调用栈**。
+
+下面是 Python 引擎处理 `sub_script` 的核心改造代码：
+
+```python
+# 改造后的执行引擎，支持执行特定的 flow_graph
+def execute_flow(device, flow_nodes, start_node_id, sub_flows_dict):
+    current_node_id = start_node_id
+    step_count = 0
+    max_steps = 1000
+
+    while current_node_id and step_count < max_steps:
+        step_count += 1
+        node = flow_nodes.get(current_node_id)
+        if not node: break
+
+        action_type = node.get("type")
+
+        # --- 新增：子脚本处理逻辑 ---
+        if action_type == "sub_script":
+            target_id = node.get("targetScriptId")
+            emit_event("log", message=f"开始进入子脚本: {node.get('scriptName')}")
+
+            sub_flow_data = sub_flows_dict.get(target_id)
+            if sub_flow_data:
+                # 【核心】：递归调用 execute_flow，开启新的状态机副本
+                sub_nodes = sub_flow_data.get("nodes", {})
+                sub_start = sub_flow_data.get("start_node")
+
+                # 等待子脚本执行完毕 (阻塞当前线程)
+                execute_flow(device, sub_nodes, sub_start, sub_flows_dict)
+
+                emit_event("log", message=f"子脚本 {node.get('scriptName')} 执行完毕，返回主流程")
+            else:
+                emit_event("error", message=f"找不到依赖的子脚本: {target_id}")
+                raise Exception("缺失子脚本")
+
+        # --- 其他普通节点逻辑 (click, wait, jump等) ---
+        elif action_type == "click":
+            # ... 执行点击 ...
+            pass
+
+        # 走向下一步
+        current_node_id = node.get("next")
+
+```
+
+### 四、 避坑与体验优化（前端必须要做的限制）
+
+引入子脚本后，你的工具能力成倍提升，但也引入了编程界最可怕的灾难：**循环依赖（死循环爆炸）**。
+
+- **问题场景**：脚本 A 调用了 脚本 B。用户又去编辑 脚本 B，让它调用 脚本 A。
+- **后果**：运行时，A调B，B调A，瞬间栈溢出（Stack Overflow），工具崩溃。
+- **前端解决方案**：
+
+1. 在“调用子脚本”的下拉列表中，**必须过滤掉当前正在编辑的脚本**（不许自己调自己）。
+2. （进阶）在保存脚本时，后端做一次有向图的**环路检测（DAG Cycle Detection）**，如果发现 A->B->A，直接拒绝保存并提示用户。
+
+- **UX 优化 (双击穿透)**：在 GoJS 中给 `sub_script` 节点绑定一个双击事件 (`doubleClick`)。当用户双击这个节点时，Vue 拦截事件，直接新开一个浏览器标签页，跳转到该子脚本的编辑页面。这会让你的工具用起来非常专业。
 

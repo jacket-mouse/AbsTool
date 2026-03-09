@@ -31,6 +31,10 @@ public interface ScriptService {
 
     ScriptEditorDto.LoadResponse loadScript(String scriptId);
     
+    ScriptEditorDto.LoadResponse loadScriptVersion(String scriptId, String versionId);
+
+    ScriptEditorDto.HistoryResponse getScriptHistory(String scriptId);
+    
     /**
      * 获取脚本列表（分页）
      * @param request 查询条件
@@ -44,4 +48,11 @@ public interface ScriptService {
      * @return 删除结果
      */
     cn.edu.sdu.software.dto.ScriptDto.DeleteResponse deleteScript(String scriptId);
+
+    /**
+     * 更新脚本信息
+     * @param request 更新请求包括 scriptId, name, type
+     * @return 更新结果
+     */
+    cn.edu.sdu.software.dto.ScriptDto.UpdateResponse updateScript(cn.edu.sdu.software.dto.ScriptDto.UpdateRequest request);
 }

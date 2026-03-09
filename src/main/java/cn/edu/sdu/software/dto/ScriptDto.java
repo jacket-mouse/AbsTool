@@ -8,12 +8,15 @@ public class ScriptDto {
         private int page = 1;
         private int size = 10;
         private String keyword;
+        private String type;
         public int getPage() { return page; }
         public void setPage(int page) { this.page = page; }
         public int getSize() { return size; }
         public void setSize(int size) { this.size = size; }
         public String getKeyword() { return keyword; }
         public void setKeyword(String keyword) { this.keyword = keyword; }
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
     }
 
     public static class ScriptListItem {
@@ -62,6 +65,34 @@ public class ScriptDto {
         private boolean success;
         private String message;
         public DeleteResponse(boolean success, String message) {
+            this.success = success;
+            this.message = message;
+        }
+        public boolean isSuccess() { return success; }
+        public void setSuccess(boolean success) { this.success = success; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+    }
+
+    public static class UpdateRequest {
+        private String scriptId;
+        private String name;
+        private String type;
+        
+        public String getScriptId() { return scriptId; }
+        public void setScriptId(String scriptId) { this.scriptId = scriptId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
+    }
+
+    public static class UpdateResponse {
+        private boolean success;
+        private String message;
+        
+        public UpdateResponse() {}
+        public UpdateResponse(boolean success, String message) {
             this.success = success;
             this.message = message;
         }

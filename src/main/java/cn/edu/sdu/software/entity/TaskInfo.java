@@ -18,6 +18,8 @@ public class TaskInfo {
 
     private String triggerType;
 
+    private String cronExpression;
+
     private String status;
 
     private LocalDateTime createTime;
@@ -66,6 +68,14 @@ public class TaskInfo {
 
     public void setTriggerType(String triggerType) {
         this.triggerType = triggerType;
+    }
+
+    public String getCronExpression() {
+        return cronExpression;
+    }
+
+    public void setCronExpression(String cronExpression) {
+        this.cronExpression = cronExpression;
     }
 
     public String getStatus() {
