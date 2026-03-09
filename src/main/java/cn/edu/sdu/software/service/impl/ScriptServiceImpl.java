@@ -23,8 +23,10 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 @Service
 public class ScriptServiceImpl implements ScriptService {
@@ -50,6 +52,7 @@ public class ScriptServiceImpl implements ScriptService {
     @Override
     @Transactional
     public ScriptEditorDto.SaveResponse saveScript(ScriptEditorDto.SaveRequest request) {
+        // 获取信息
         String scriptId = request.getScriptId();
         ScriptConfig content = request.getContent();
         String currentUser = UserContext.getUserId();
@@ -57,7 +60,7 @@ public class ScriptServiceImpl implements ScriptService {
         boolean isNew = false;
         ScriptInfo scriptInfo = null;
 
-        if (scriptId != null && !scriptId.isEmpty() && !scriptId.startsWith("script-")) {
+        if (scriptId != null && !scriptId.isEmpty()) {
             scriptInfo = scriptInfoMapper.selectById(scriptId);
         }
 
@@ -101,44 +104,43 @@ public class ScriptServiceImpl implements ScriptService {
             newVersionStr = "1";
         }
 
-        // 节点 ID 重写为 脚本ID-节点编号，同步更新边和 groupKey
-        if (content != null && content.getNodes() != null) {
-            // 第一步：构建 oldId -> newId 映射
-            java.util.Map<String, String> idRemap = new java.util.HashMap<>();
-            for (ScriptNode node : content.getNodes()) {
-                String oldId = node.getId();
-                if (oldId == null || oldId.isEmpty()) continue;
-                if (!oldId.startsWith(scriptId + "-")) {
-                    String[] parts = oldId.split("-");
-                    String baseId = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-                    String newId = scriptId + "-" + baseId;
-                    if (!oldId.equals(newId)) {
-                        idRemap.put(oldId, newId);
-                    }
-                }
-            }
-            // 第二步：应用映射到节点 ID、连线 from/to、以及 groupKey
-            for (ScriptNode node : content.getNodes()) {
-                String oldId = node.getId();
-                if (idRemap.containsKey(oldId)) {
-                    node.setId(idRemap.get(oldId));
-                }
-                // 同步更新 groupKey（子节点所属的 Group ID 也需要重写）
-                if (node.getGroupKey() != null && idRemap.containsKey(node.getGroupKey())) {
-                    node.setGroupKey(idRemap.get(node.getGroupKey()));
-                }
-            }
-            if (content.getConnections() != null) {
-                for (Connection conn : content.getConnections()) {
-                    if (conn.getFrom() != null && idRemap.containsKey(conn.getFrom())) {
-                        conn.setFrom(idRemap.get(conn.getFrom()));
-                    }
-                    if (conn.getTo() != null && idRemap.containsKey(conn.getTo())) {
-                        conn.setTo(idRemap.get(conn.getTo()));
-                    }
-                }
-            }
-        }
+//        // 节点 ID 重写为 脚本ID-节点编号，同步更新边和 groupKey
+//        if (content != null && content.getNodes() != null) {
+//            // 第一步：构建 oldId -> newId 映射
+//            Map<String, String> idRemap = new HashMap<>();
+//            for (ScriptNode node : content.getNodes()) {
+//                String oldId = node.getId();
+//                if (oldId == null || oldId.isEmpty()) continue;
+//                if (oldId.contains("-")) {
+//                    String[] parts = oldId.split("-");
+//                    String newId = parts[parts.length - 1]; // 只保留最后的数字编号部分
+//                    if (!oldId.equals(newId)) {
+//                        idRemap.put(oldId, newId);
+//                    }
+//                }
+//            }
+//            // 第二步：应用映射到节点 ID、连线 from/to、以及 groupKey
+//            for (ScriptNode node : content.getNodes()) {
+//                String oldId = node.getId();
+//                if (idRemap.containsKey(oldId)) {
+//                    node.setId(idRemap.get(oldId));
+//                }
+//                // 同步更新 groupKey（子节点所属的 Group ID 也需要重写）
+//                if (node.getGroupKey() != null && idRemap.containsKey(node.getGroupKey())) {
+//                    node.setGroupKey(idRemap.get(node.getGroupKey()));
+//                }
+//            }
+//            if (content.getConnections() != null) {
+//                for (Connection conn : content.getConnections()) {
+//                    if (conn.getFrom() != null && idRemap.containsKey(conn.getFrom())) {
+//                        conn.setFrom(idRemap.get(conn.getFrom()));
+//                    }
+//                    if (conn.getTo() != null && idRemap.containsKey(conn.getTo())) {
+//                        conn.setTo(idRemap.get(conn.getTo()));
+//                    }
+//                }
+//            }
+//        }
 
         try {
             String contentJson = objectMapper.writeValueAsString(content);
