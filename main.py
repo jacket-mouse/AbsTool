@@ -8,7 +8,7 @@ from loguru import logger
 from core.exceptions import AppException
 from middleware.auth_middleware import AuthMiddleware
 from middleware.logging_middleware import LoggingMiddleware
-from routers import auth_router, script_router, script_editor_router, task_router, template_router, generator_router
+from routers import auth_router, script_router, script_editor_router, task_router, template_router, generator_router, device_inspector_router
 from ws_handlers.script_debug_ws import script_debug_ws_handler
 from ws_handlers.task_execute_ws import task_execute_ws_handler
 
@@ -64,6 +64,7 @@ app.include_router(script_editor_router.router)
 app.include_router(task_router.router)
 app.include_router(template_router.router)
 app.include_router(generator_router.router)
+app.include_router(device_inspector_router.router)
 
 
 # WebSocket 端点
