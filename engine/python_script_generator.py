@@ -29,7 +29,7 @@ class PythonScriptGenerator:
     def generate_debug(self, config: ScriptConfig) -> str:
         return self._generate_internal(config, is_debug=True)
 
-    # ── 内部实现 ─────────────────────────────────────────────────────────────
+    # 内部实现
 
     def _generate_internal(self, config: ScriptConfig, is_debug: bool) -> str:
         flow_graph, start_node_id = self._build_flow_graph(config)
@@ -60,8 +60,7 @@ class PythonScriptGenerator:
         # 返回文件内容（供 MinIO 上传或直接执行使用）
         return content
 
-    # ── 图结构计算 ───────────────────────────────────────────────────────────
-
+    # 图结构计算
     def _build_flow_graph(self, config: ScriptConfig):
         """将 ScriptConfig 转换为运行时 flow_graph dict 和起始节点 ID。"""
         node_map: Dict[str, ScriptNode] = {}
@@ -72,15 +71,18 @@ class PythonScriptGenerator:
         nodes = config.nodes or []
         connections = config.connections or []
 
+        # 节点解析
         for node in nodes:
             node_map[node.id] = node
-            in_degree[node.id] = 0
+            in_degree[node.id] = 0 # 入度统计方便判断起始节点和孤岛
             if node.group_key:
                 node_group_map[node.id] = node.group_key
 
+        # 边解析
         for conn in connections:
             if conn.from_node in node_map and conn.to_node in node_map:
                 if conn.from_port:
+                    # 分支节点
                     existing = next_map.get(conn.from_node)
                     if isinstance(existing, dict):
                         existing[conn.from_port] = conn.to_node
@@ -89,6 +91,7 @@ class PythonScriptGenerator:
                     else:
                         next_map[conn.from_node] = {conn.from_port: conn.to_node}
                 else:
+                    # 普通节点边
                     next_map[conn.from_node] = conn.to_node
                 in_degree[conn.to_node] = in_degree.get(conn.to_node, 0) + 1
 

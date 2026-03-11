@@ -8,6 +8,10 @@ from utils.jwt import JwtUtils
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # ★ WebSocket 请求跳过 JWT 校验
+        if request.scope["type"] == "websocket":
+            return await call_next(request)
+
         token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if token:
             try:

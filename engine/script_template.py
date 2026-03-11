@@ -274,30 +274,6 @@ def handle_loop(device, node, dispatcher):
         print(json.dumps({"type": "log", "message": "循环节点无子节点，跳过"}, ensure_ascii=False), flush=True)
         return
 
-    def run_iteration():
-        cur = child_start
-        steps = 0
-        while cur and steps < 500:
-            steps += 1
-            child_data = child_nodes.get(cur)
-            if not child_data:
-                break
-            child_type = child_data.get("type", "unknown")
-            child_next = child_data.get("next")
-            print(json.dumps({"type": "log", "message": f"[循环体] 执行: {child_type} (节点 {cur})"}, ensure_ascii=False), flush=True)
-            handler = dispatcher.get(child_type)
-            branch = None
-            if handler and child_type != "loop":
-                try:
-                    branch = handler(device, child_data)
-                except Exception as e:
-                    print(json.dumps({"type": "error", "message": f"[循环体] 节点 {cur} 执行出错: {e}"}, ensure_ascii=False), flush=True)
-                    raise
-            if isinstance(child_next, dict):
-                branch_key = str(branch) if branch else "B"
-                cur = child_next.get(branch_key) or child_next.get("default")
-            else:
-                cur = child_next
 
     if loop_type == "计数循环":
         try:
@@ -307,28 +283,7 @@ def handle_loop(device, node, dispatcher):
         print(json.dumps({"type": "log", "message": f"开始计数循环，共 {n} 次"}, ensure_ascii=False), flush=True)
         for i in range(n):
             print(json.dumps({"type": "log", "message": f"循环第 {i+1}/{n} 次"}, ensure_ascii=False), flush=True)
-            run_iteration()
         print(json.dumps({"type": "log", "message": f"计数循环完成，共执行 {n} 次"}, ensure_ascii=False), flush=True)
-    elif loop_type == "条件循环":
-        condition = str(node.get("condition", "")).strip()
-        max_iters = 200
-        iteration = 0
-        print(json.dumps({"type": "log", "message": f"开始条件循环，条件: {condition}"}, ensure_ascii=False), flush=True)
-        while iteration < max_iters:
-            try:
-                local_ctx = {"device": device}
-                should_continue = eval(condition, {"__builtins__": __builtins__}, local_ctx)
-            except Exception as ce:
-                print(json.dumps({"type": "error", "message": f"条件循环条件求值失败: {ce}"}, ensure_ascii=False), flush=True)
-                break
-            if not should_continue:
-                print(json.dumps({"type": "log", "message": f"条件循环退出：条件 '{condition}' 不满足"}, ensure_ascii=False), flush=True)
-                break
-            iteration += 1
-            print(json.dumps({"type": "log", "message": f"条件循环第 {iteration} 次迭代"}, ensure_ascii=False), flush=True)
-            run_iteration()
-        if iteration >= max_iters:
-            print(json.dumps({"type": "log", "message": f"条件循环达到安全上限 {max_iters} 次，强制退出"}, ensure_ascii=False), flush=True)
 
 # --- 2. 注册动作字典 ---
 ACTION_DISPATCHER = {
