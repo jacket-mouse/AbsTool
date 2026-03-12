@@ -63,9 +63,9 @@ class PythonScriptGenerator:
     # 图结构计算
     def _build_flow_graph(self, config: ScriptConfig):
         """将 ScriptConfig 转换为运行时 flow_graph dict 和起始节点 ID。"""
-        node_map: Dict[str, ScriptNode] = {}
-        next_map: Dict[str, Any] = {}
-        in_degree: Dict[str, int] = {}
+        node_map: Dict[str, ScriptNode] = {} # nodeId -> ScriptNode
+        next_map: Dict[str, Any] = {}        # FromScriptNode -> ToScriptNode / 分支节点 dict{}
+        in_degree: Dict[str, int] = {}       # nodeId -> int
         node_group_map: Dict[str, str] = {}  # childId -> groupNodeId
 
         nodes = config.nodes or []
@@ -78,68 +78,72 @@ class PythonScriptGenerator:
             if node.group_key:
                 node_group_map[node.id] = node.group_key
 
-        # 边解析
+        # 边解析 没有考虑 goto
         for conn in connections:
-            if conn.from_node in node_map and conn.to_node in node_map:
+            if conn.from_node in node_map and conn.to_node in node_map: # 过滤无效边
                 if conn.from_port:
-                    # 分支节点
-                    existing = next_map.get(conn.from_node)
+                    # 存在 from_port 分支节点 from_node
+                    existing = next_map.get(conn.from_node) # 查看分支节点 from_node 是否已经登记过出口信息
                     if isinstance(existing, dict):
-                        existing[conn.from_port] = conn.to_node
-                    elif isinstance(existing, str):
-                        next_map[conn.from_node] = {"default": existing, conn.from_port: conn.to_node}
-                    else:
+                        existing[conn.from_port] = conn.to_node # 在字典里追加另一个 from_port 信息
+                    else: # 第一次写入该分支节点的信息
                         next_map[conn.from_node] = {conn.from_port: conn.to_node}
                 else:
-                    # 普通节点边
+                    # 普通节点
                     next_map[conn.from_node] = conn.to_node
                 in_degree[conn.to_node] = in_degree.get(conn.to_node, 0) + 1
 
         # 构建 loop 组节点的子图
-        loop_children_map: Dict[str, Dict[str, Any]] = {}
+        loop_children_map: Dict[str, Dict[str, Any]] = {} # loop_id -> nodes & startNodeId
         for node in nodes:
             if node.is_group and node.type == "loop":
-                child_nodes: Dict[str, Dict[str, Any]] = {}
+                child_nodes: Dict[str, Dict[str, Any]] = {} # nodeId -> type next properties(部分)
                 child_in_degree: Dict[str, int] = {}
 
+                # 循环节点子图 节点处理
                 for child in nodes:
-                    if child.group_key == node.id:
+                    if child.group_key == node.id: # 循环节点的 id = group_key
                         child_data: Dict[str, Any] = {"type": child.type, "next": next_map.get(child.id)}
                         if child.properties:
                             props = dict(child.properties)
-                            for k in ("loc", "category", "key"):
+                            for k in ("loc", "category", "key"): # 删除不需要的元数据
                                 props.pop(k, None)
-                            child_data.update(props)
+                            child_data.update(props) # 将剩余数据合并到 child_data
                         child_nodes[child.id] = child_data
                         child_in_degree[child.id] = 0
 
+                # 边处理 必须两个节点都在同一个组内部才算入度
+                # 没有考虑 goto
                 for conn in connections:
                     if conn.from_node in child_nodes and conn.to_node in child_nodes:
                         child_in_degree[conn.to_node] = child_in_degree.get(conn.to_node, 0) + 1
 
+                # next(迭代器, 默认值)
                 child_start = next(
                     (cid for cid, deg in child_in_degree.items() if deg == 0),
                     next(iter(child_nodes), ""),
-                )
+                ) # 取入度为零的节点 默认值：child_nodes 里第一个值
                 loop_children_map[node.id] = {"nodes": child_nodes, "startNodeId": child_start}
 
-        # 确定顶层起始节点
+        # 确定顶层起始节点 排除在循环组里的节点
         start_node_id = next(
             (nid for nid, deg in in_degree.items() if deg == 0 and nid not in node_group_map),
             nodes[0].id if nodes else "",
         )
 
-        # 构建 flow_graph（跳过子节点）
-        flow_graph: Dict[str, Dict[str, Any]] = {}
+        # 构建 flow_graph（goto）
+        flow_graph: Dict[str, Dict[str, Any]] = {} # nodeId -> dict{属性}
         for node in nodes:
             if node.id in node_group_map:
                 continue
             entry: Dict[str, Any] = {"type": node.type, "next": next_map.get(node.id)}
+            # 像循环节点那样删除部分属性
             if node.properties:
                 props = dict(node.properties)
-                for k in ("loc", "category", "key"):
+                for k in ("loc", "category", "key", "color", "icon", "iconLabel"):
                     props.pop(k, None)
                 entry.update(props)
+            # 循环节点 添加上子图信息
             if node.is_group and node.type == "loop" and node.id in loop_children_map:
                 entry["children"] = loop_children_map[node.id]
             flow_graph[node.id] = entry

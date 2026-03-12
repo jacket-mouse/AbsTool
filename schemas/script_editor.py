@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 class Connection(BaseModel):
     from_node: str = Field(alias="from")
     to_node: str = Field(alias="to")
-    from_port: Optional[str] = Field(default=None, alias="fromPort")
-    to_port: Optional[str] = Field(default=None, alias="toPort")
+    from_port: Optional[str] = Field(default=None, alias="fromPort") # 表示边从哪个出口离开源节点 一般节点为空
+    to_port: Optional[str] = Field(default=None, alias="toPort") # 表示边从哪个入口进入目标节点
 
     class Config:
         populate_by_name = True

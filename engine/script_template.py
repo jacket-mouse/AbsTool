@@ -14,8 +14,8 @@ import os
 null = None
 
 # --- 关键配置（由生成器填充）---
-_FLOW_GRAPH_ = {"1773203245104": {"type": "unlock", "next": null, "color": "#a855f7", "icon": "Unlock", "iconLabel": "解", "unlockType": "密码", "password": "139699", "gesture": ""}}  # __FLOW_GRAPH__
-_START_NODE_ID_ = "1773203245104"  # __START_NODE__
+_FLOW_GRAPH_ = {"1": {"type": "click", "next": null, "color": "#3b82f6", "icon": "Pointer", "iconLabel": "点", "targetType": "坐标", "x": "", "y": "", "elementId": ""}}  # __FLOW_GRAPH__
+_START_NODE_ID_ = "1"  # __START_NODE__
 _IS_DEBUG_MODE_ = False  # __IS_DEBUG__
 
 # --- 1. 定义各个具体动作的执行函数 (Handlers) ---
@@ -270,20 +270,92 @@ def handle_loop(device, node, dispatcher):
     children_graph = node.get("children", {})
     child_nodes = children_graph.get("nodes", {})
     child_start = children_graph.get("startNodeId", "")
+
+    # 如果没有配置子节点，直接跳过
     if not child_nodes or not child_start:
-        print(json.dumps({"type": "log", "message": "循环节点无子节点，跳过"}, ensure_ascii=False), flush=True)
+        print(json.dumps({"type": "log", "message": "循环节点无子节点或未设置起始节点，跳过"}, ensure_ascii=False),
+              flush=True)
         return
 
+    # 定义单次子图运行的函数 (迷你状态机)
+    def run_iteration():
+        current_id = child_start
+        step = 0
+        max_steps = 500  # 为子循环设置一个防死循环的安全锁
 
+        while current_id and step < max_steps:
+            step += 1
+            child_node_data = child_nodes.get(current_id)
+
+            if not child_node_data:
+                break  # 找不到节点，结束当前循环的这一轮次
+
+            action_type = child_node_data.get("type", "unknown")
+            next_node = child_node_data.get("next")
+
+            # 提取执行函数并运行
+            handler_func = dispatcher.get(action_type)
+            result = None
+            if handler_func:
+                try:
+                    # 得益于你在注册字典时用的 lambda，这里直接传参即可，支持嵌套循环
+                    result = handler_func(device, child_node_data)
+                    print(json.dumps({"type": "log", "message": f"  [循环子节点] {current_id}({action_type}) 执行成功"},
+                                     ensure_ascii=False), flush=True)
+                except Exception as e:
+                    print(json.dumps({"type": "error", "message": f"  [循环子节点] {current_id} 执行失败: {e}"},
+                                     ensure_ascii=False), flush=True)
+                    raise e  # 抛出异常，让主流程捕获
+            elif action_type != "unknown":
+                print(json.dumps({"type": "log", "message": f"  未知的子动作类型: {action_type}"}, ensure_ascii=False),
+                      flush=True)
+
+            # 解析子流程的下一个节点
+            if isinstance(next_node, dict):
+                branch_key = str(result) if result else "B"  # 默认走 True/B 分支
+                current_id = next_node.get(branch_key)
+                if not current_id:
+                    current_id = next_node.get("default")
+            else:
+                current_id = next_node
+
+    # 根据循环类型执行
     if loop_type == "计数循环":
         try:
             n = int(node.get("iterations", 1))
         except (ValueError, TypeError):
             n = 1
+
         print(json.dumps({"type": "log", "message": f"开始计数循环，共 {n} 次"}, ensure_ascii=False), flush=True)
         for i in range(n):
-            print(json.dumps({"type": "log", "message": f"循环第 {i+1}/{n} 次"}, ensure_ascii=False), flush=True)
+            print(json.dumps({"type": "log", "message": f"--- 循环第 {i + 1}/{n} 次 ---"}, ensure_ascii=False),
+                  flush=True)
+            run_iteration()
         print(json.dumps({"type": "log", "message": f"计数循环完成，共执行 {n} 次"}, ensure_ascii=False), flush=True)
+
+    # 你还可以扩展其他循环类型，比如：条件循环
+    elif loop_type == "条件循环":
+        condition = node.get("condition", "False")
+        print(json.dumps({"type": "log", "message": f"开始条件循环，条件: {condition}"}, ensure_ascii=False), flush=True)
+        loop_count = 0
+        while True:
+            try:
+                # 评估条件是否成立
+                is_true = eval(condition, {"__builtins__": __builtins__}, {"device": device})
+                if not is_true:
+                    break
+            except Exception as e:
+                print(json.dumps({"type": "error", "message": f"条件检测异常，退出循环: {e}"}, ensure_ascii=False),
+                      flush=True)
+                break
+
+            loop_count += 1
+            print(
+                json.dumps({"type": "log", "message": f"--- 条件满足，执行第 {loop_count} 次 ---"}, ensure_ascii=False),
+                flush=True)
+            run_iteration()
+        print(json.dumps({"type": "log", "message": f"条件循环完成，共执行 {loop_count} 次"}, ensure_ascii=False),
+              flush=True)
 
 # --- 2. 注册动作字典 ---
 ACTION_DISPATCHER = {
@@ -328,13 +400,13 @@ def run_script():
 
     print(json.dumps({"type": "log", "message": "脚本状态机开始执行..."}, ensure_ascii=False), flush=True)
 
-    is_debug_mode = _IS_DEBUG_MODE_
+    is_debug_mode = _IS_DEBUG_MODE_ # True 则可以一个个执行
     debug_lock = threading.Event()
 
     if is_debug_mode:
-        debug_lock.clear()
+        debug_lock.clear() # 线程阻塞
     else:
-        debug_lock.set()
+        debug_lock.set() # 线程通过
 
     engine_running = True
 
