@@ -81,13 +81,18 @@ class PythonScriptGenerator:
         # 边解析 没有考虑 goto
         for conn in connections:
             if conn.from_node in node_map and conn.to_node in node_map: # 过滤无效边
-                if conn.from_port:
-                    # 存在 from_port 分支节点 from_node
+                from_node = node_map[conn.from_node]
+                if from_node.type == "decision":
+                    # 分支节点
                     existing = next_map.get(conn.from_node) # 查看分支节点 from_node 是否已经登记过出口信息
                     if isinstance(existing, dict):
                         existing[conn.from_port] = conn.to_node # 在字典里追加另一个 from_port 信息
                     else: # 第一次写入该分支节点的信息
                         next_map[conn.from_node] = {conn.from_port: conn.to_node}
+                elif from_node.type == "appState":
+                    continue # ToDo 完善状态节点
+                elif from_node.type == "loop":
+                    next_map[conn.from_node] = None # 循环节点无下一个节点，而是从子节点开始执行
                 else:
                     # 普通节点
                     next_map[conn.from_node] = conn.to_node

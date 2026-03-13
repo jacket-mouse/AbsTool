@@ -8,7 +8,8 @@ from loguru import logger
 from core.exceptions import AppException
 from middleware.auth_middleware import AuthMiddleware
 from middleware.logging_middleware import LoggingMiddleware
-from routers import auth_router, script_router, script_editor_router, task_router, template_router, generator_router, stream_router
+from routers import auth_router, script_router, script_editor_router, task_router, template_router, generator_router, \
+    stream_router, device_router
 from ws_handlers.script_debug_ws import script_debug_ws_handler
 from ws_handlers.task_execute_ws import task_execute_ws_handler
 
@@ -22,7 +23,6 @@ async def lifespan(app: FastAPI):
     # 关闭时停止调度器
     from scheduler.task_scheduler import task_scheduler_manager
     task_scheduler_manager.shutdown()
-
 
 app = FastAPI(lifespan=lifespan)
 
@@ -66,6 +66,7 @@ app.include_router(task_router.router)
 app.include_router(template_router.router)
 app.include_router(generator_router.router)
 app.include_router(stream_router.router)
+app.include_router(device_router.router)
 
 # WebSocket 端点
 @app.websocket("/api/ws/script/debug")

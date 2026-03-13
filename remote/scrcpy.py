@@ -1,6 +1,6 @@
 import asyncio
 import json
-import logging
+from loguru import logger
 import os
 import socket
 import struct
@@ -15,7 +15,6 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from uiautodev.remote.touch_controller import ScrcpyTouchController
 
-logger = logging.getLogger(__name__)
 
 
 class ScrcpyServer:
@@ -99,6 +98,12 @@ class ScrcpyServer:
         """
         # 获取设备对象
         device = self.device
+
+        # 🚀 终极修复 1：杀掉所有的 scrcpy 僵尸进程！释放 Socket 端口！
+        try:
+            device.shell('pkill -f scrcpy', check=False)
+        except Exception:
+            pass
 
         # 推送 scrcpy 服务器到设备
         device.sync.push(self.scrcpy_jar_path, '/data/local/tmp/scrcpy_server.jar', check=True)

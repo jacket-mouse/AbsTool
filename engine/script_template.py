@@ -11,12 +11,15 @@ import sys
 import threading
 import os
 
+# JSON 兼容
 null = None
+true = True
+false = False
 
 # --- 关键配置（由生成器填充）---
-_FLOW_GRAPH_ = {"1": {"type": "click", "next": null, "color": "#3b82f6", "icon": "Pointer", "iconLabel": "点", "targetType": "坐标", "x": "", "y": "", "elementId": ""}}  # __FLOW_GRAPH__
+_FLOW_GRAPH_ = {"1": {"type": "click", "next": "2", "isGroup": false, "targetType": "坐标", "x": 2, "y": 2, "elementId": ""}, "2": {"type": "decision", "next": {"B": "3", "R": "4"}, "isGroup": false, "condition": "1"}, "3": {"type": "longPress", "next": null, "isGroup": false, "targetType": "坐标", "x": 3, "y": 3, "elementId": ""}, "4": {"type": "swipe", "next": null, "isGroup": false, "startX": 2, "startY": 2, "endX": 2, "endY": 4}}  # __FLOW_GRAPH__
 _START_NODE_ID_ = "1"  # __START_NODE__
-_IS_DEBUG_MODE_ = False  # __IS_DEBUG__
+_IS_DEBUG_MODE_ = True  # __IS_DEBUG__
 
 # --- 1. 定义各个具体动作的执行函数 (Handlers) ---
 # 点击
@@ -253,7 +256,7 @@ def handle_decision(device, node):
         return "R"
     try:
         local_ctx = {"device": device}
-        result = eval(condition, {"__builtins__": __builtins__}, local_ctx)
+        result = eval("1==1", {"__builtins__": __builtins__}, local_ctx)
         if result:
             print(json.dumps({"type": "log", "message": f"条件检测 '{condition}' 解析为 True"}, ensure_ascii=False), flush=True)
             return "B"
@@ -261,7 +264,8 @@ def handle_decision(device, node):
             print(json.dumps({"type": "log", "message": f"条件 '{condition}' 不满足 [False 分支]"}, ensure_ascii=False), flush=True)
             return "R"
     except Exception as e:
-        print(json.dumps({"type": "error", "message": f"条件检测抛出异常 '{condition}': {e}，默认走 False"}, ensure_ascii=False), flush=True)
+        # TODO error 类型的日志打印不出来 会隐藏 BUG
+        print(json.dumps({"type": "log", "message": f"条件检测抛出异常 '{condition}': {e}，默认走 False"}, ensure_ascii=False), flush=True)
         return "R"
 
 # 循环执行
@@ -333,30 +337,6 @@ def handle_loop(device, node, dispatcher):
             run_iteration()
         print(json.dumps({"type": "log", "message": f"计数循环完成，共执行 {n} 次"}, ensure_ascii=False), flush=True)
 
-    # 你还可以扩展其他循环类型，比如：条件循环
-    elif loop_type == "条件循环":
-        condition = node.get("condition", "False")
-        print(json.dumps({"type": "log", "message": f"开始条件循环，条件: {condition}"}, ensure_ascii=False), flush=True)
-        loop_count = 0
-        while True:
-            try:
-                # 评估条件是否成立
-                is_true = eval(condition, {"__builtins__": __builtins__}, {"device": device})
-                if not is_true:
-                    break
-            except Exception as e:
-                print(json.dumps({"type": "error", "message": f"条件检测异常，退出循环: {e}"}, ensure_ascii=False),
-                      flush=True)
-                break
-
-            loop_count += 1
-            print(
-                json.dumps({"type": "log", "message": f"--- 条件满足，执行第 {loop_count} 次 ---"}, ensure_ascii=False),
-                flush=True)
-            run_iteration()
-        print(json.dumps({"type": "log", "message": f"条件循环完成，共执行 {loop_count} 次"}, ensure_ascii=False),
-              flush=True)
-
 # --- 2. 注册动作字典 ---
 ACTION_DISPATCHER = {
     "click": handle_click,
@@ -379,6 +359,7 @@ ACTION_DISPATCHER = {
 }
 
 def run_script():
+    # 设备连接 输出信息至 stdout
     print(json.dumps({"type": "log", "message": "正在连接设备..."}, ensure_ascii=False), flush=True)
     try:
         device = u2.connect()
@@ -387,14 +368,12 @@ def run_script():
         print(json.dumps({"type": "init", "status": "error", "error": str(e)}, ensure_ascii=False), flush=True)
         sys.exit(1)
 
-    null = None
-    true = True
-    false = False
+
 
     # 使用配置区的关键变量
     flow_graph = _FLOW_GRAPH_
     current_node_id = _START_NODE_ID_
-    jump_counters = {}
+    jump_counters = {} # 记录每个跳转节点跳转次数
     max_total_steps = 1000
     step_count = 0
 
@@ -404,38 +383,43 @@ def run_script():
     debug_lock = threading.Event()
 
     if is_debug_mode:
-        debug_lock.clear() # 线程阻塞
+        debug_lock.clear() # 线程阻塞信号，之后若遇到 wait 则阻塞
     else:
-        debug_lock.set() # 线程通过
+        debug_lock.set() # 线程通过状态，之后若遇到 wait 直接通过
 
     engine_running = True
 
     def debug_listener():
-        nonlocal is_debug_mode, engine_running
+        # is_debug_mode 决定下一个节点执行完之后要不要暂停
+        # debug_lock 决定当前线程现在能不能继续走 如果上一次没有暂停(is_debug_mode = False) 这一个就没用
+        """
+            命令      is_debug_mode    debug_lock    效果
+            ────────  ─────────────    ──────────    ──────────────────────
+            stop      False            set()         进程直接退出
+            pause     True             不动          当前节点跑完，下个节点暂停
+            run       False            set()         立即解除阻塞 + 后续不再暂停
+            step      True             set()         立即解除阻塞 + 下个节点还暂停
+        """
+        nonlocal is_debug_mode, engine_running # 上层函数的值我可以在该函数内部修改
         while engine_running:
             line = sys.stdin.readline()
             if not line:
-                break
+                break # 线程停止运行
             try:
                 cmd = json.loads(line)
                 cmd_action = cmd.get("action")
                 if cmd_action == "stop":
-                    engine_running = False
+                    engine_running = False # 该线程停止运行
                     debug_lock.set()
                     os._exit(0)
                 elif cmd_action == "pause":
                     is_debug_mode = True
+                    # 不写 debug_lock 默认阻塞
                 elif cmd_action == "run":
                     is_debug_mode = False
                     debug_lock.set()
                 elif cmd_action == "step":
                     is_debug_mode = True
-                    override_code = cmd.get("overrideCode")
-                    if override_code:
-                        try:
-                            exec(override_code, globals(), globals())
-                        except Exception as dev_err:
-                            print(json.dumps({"type": "log", "status": "error", "message": f"执行覆盖代码失败: {dev_err}"}, ensure_ascii=False), flush=True)
                     debug_lock.set()
                 elif cmd_action == "update_node":
                     node_id = cmd.get("nodeId")
@@ -447,6 +431,9 @@ def run_script():
             except Exception:
                 pass
 
+    # 启动了一个后台线程 读取标准输入（前端）
+    # 该线程只会执行 debug_listener 一个函数
+    # daemon = True 主线程结束监听线程也结束
     listener_thread = threading.Thread(target=debug_listener, daemon=True)
     listener_thread.start()
 
@@ -464,7 +451,8 @@ def run_script():
         print(json.dumps({"type": "running_node", "nodeId": current_node_id, "action": action_type}, ensure_ascii=False), flush=True)
 
         if is_debug_mode:
-            debug_lock.clear()
+            debug_lock.clear() # 阻塞
+            # 除了 next 和 type 的其他属性都存到 details 里
             details = {k: v for k, v in node_data.items() if k not in ["next", "type"]}
             if details:
                 print(json.dumps({"type": "log", "message": f"[Debug] 断点：即将执行 {action_type}，参数: {details}"}, ensure_ascii=False), flush=True)
@@ -504,11 +492,10 @@ def run_script():
         elif action_type != "unknown":
             print(json.dumps({"type": "log", "message": f"未知的动作类型: {action_type}"}, ensure_ascii=False), flush=True)
 
-        if isinstance(next_node, dict):
-            branch_key = str(result) if result else "B"
+        if isinstance(next_node, dict): # 条件分支
+            # B True R False
+            branch_key = str(result) if result else "B" # 三元表达式
             current_node_id = next_node.get(branch_key)
-            if not current_node_id:
-                current_node_id = next_node.get("default")
         else:
             current_node_id = next_node
 
@@ -519,3 +506,4 @@ def run_script():
 
 if __name__ == "__main__":
     run_script()
+

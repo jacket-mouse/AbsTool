@@ -12,6 +12,7 @@ async def device_stream(websocket: WebSocket):
     await websocket.accept()
 
     # 获取设备
+    # TODO 从前端获取
     device = adb.device_list()[0]
 
     server = ScrcpyServer(device, version="2.7")

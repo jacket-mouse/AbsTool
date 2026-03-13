@@ -3,6 +3,8 @@ import io
 import os
 from minio import Minio
 from minio.error import S3Error
+from loguru import logger
+
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 if MINIO_ENDPOINT.startswith("http://"):
     MINIO_ENDPOINT = MINIO_ENDPOINT.replace("http://", "")
@@ -52,7 +54,6 @@ class MinioFileService:
             response = self.client.get_object(MINIO_BUCKET, file_name)
             return response.read().decode("utf-8")
         except S3Error as e:
-            from loguru import logger
             logger.error(f"MinIO get_object failed [{file_name}]: {e}")
             return ""
         finally:

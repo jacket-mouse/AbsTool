@@ -1,11 +1,9 @@
-import logging
+from loguru import logger
 from pathlib import Path
 import socket
 from adbutils import AdbConnection, AdbDevice, AdbError, Network
 from fastapi import WebSocket
 from retry import retry
-
-logger = logging.getLogger(__name__)
 
 
 class ScrcpyServer3:

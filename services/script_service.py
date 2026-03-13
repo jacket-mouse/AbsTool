@@ -16,14 +16,12 @@ from schemas.script import (
 from schemas.script_editor import (
     SaveRequest, SaveResponse,
     ValidateRequest, ValidateResponse,
-    PreviewRequest, PreviewResponse,
     LoadResponse,
     HistoryResponse, HistoryVersionDto,
 )
 from core.user_context import get_current_user_id
 from services.minio_service import MinioFileService
 from engine.python_script_generator import PythonScriptGenerator
-from engine.xml_script_generator import XmlScriptGenerator
 
 
 class ScriptService:
@@ -32,7 +30,6 @@ class ScriptService:
         self.db = db
         self.minio = MinioFileService()
         self.python_gen = PythonScriptGenerator()
-        self.xml_gen = XmlScriptGenerator()
 
     # ─── 保存脚本 ────────────────────────────────────────────────────────────
 
@@ -170,25 +167,6 @@ class ScriptService:
 
         return ValidateResponse(valid=len(errors) == 0, errors=errors)
 
-    # ─── 预览脚本（Mermaid） ─────────────────────────────────────────────────
-
-    def preview_script(self, request: PreviewRequest) -> PreviewResponse:
-        content = request.content
-        if not content or not content.nodes:
-            return PreviewResponse(mermaid="")
-
-        lines = ["graph TD;"]
-        for node in content.nodes:
-            label = node.type or "Node"
-            safe_id = node.id.replace("-", "_")
-            lines.append(f'    {safe_id}["{label}"]')
-
-        for conn in (content.connections or []):
-            frm = conn.from_node.replace("-", "_")
-            to = conn.to_node.replace("-", "_")
-            lines.append(f"    {frm} --> {to}")
-
-        return PreviewResponse(mermaid="\n".join(lines))
 
     # ─── 加载最新版本 ────────────────────────────────────────────────────────
 

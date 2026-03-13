@@ -71,7 +71,6 @@ class ValidateResponse(BaseModel):
 class PreviewRequest(BaseModel):
     content: Optional[ScriptConfig] = None
 
-
 class PreviewResponse(BaseModel):
     mermaid: str
 

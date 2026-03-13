@@ -12,7 +12,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from engine.python_script_generator import PythonScriptGenerator
 from schemas.script_editor import ScriptConfig, ScriptNode, Connection
 
-PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/venv/bin/python3"
+PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/.venv/bin/python3"
 
 python_gen = PythonScriptGenerator()
 
