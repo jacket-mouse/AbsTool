@@ -20,8 +20,6 @@ class ScriptNode(BaseModel):
     title: Optional[str] = None
     desc: Optional[str] = None
     loc: Optional[str] = None
-    is_group: bool = Field(default=False, alias="isGroup")
-    group_key: Optional[str] = Field(default=None, alias="groupKey")
     properties: Optional[Dict[str, Any]] = None
 
     class Config:

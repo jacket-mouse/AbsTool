@@ -2,9 +2,8 @@
 from fastapi import APIRouter, WebSocket
 from adbutils import adb
 from remote.scrcpy import ScrcpyServer
-
+from loguru import logger
 router = APIRouter()
-
 
 @router.websocket("/api/ws/device/stream")
 async def device_stream(websocket: WebSocket):
@@ -12,8 +11,9 @@ async def device_stream(websocket: WebSocket):
     await websocket.accept()
 
     # 获取设备
-    # TODO 从前端获取
-    device = adb.device_list()[0]
+    serial = websocket.query_params.get("serial")
+    logger.info(f"正在推流设备: serial {serial}")
+    device = adb.device(serial)
 
     server = ScrcpyServer(device, version="2.7")
     try:

@@ -71,28 +71,26 @@ class PythonScriptGenerator:
         nodes = config.nodes or []
         connections = config.connections or []
 
-        # 节点解析
+        # 节点解析 TODO 有些属性没有正常解析
         for node in nodes:
             node_map[node.id] = node
             in_degree[node.id] = 0 # 入度统计方便判断起始节点和孤岛
-            if node.group_key:
-                node_group_map[node.id] = node.group_key
+            if not node.type == "loop" and node.properties.get("group", ""):
+                node_group_map[node.id] = node.properties.get("group", "")
 
         # 边解析 没有考虑 goto
         for conn in connections:
             if conn.from_node in node_map and conn.to_node in node_map: # 过滤无效边
                 from_node = node_map[conn.from_node]
-                if from_node.type == "decision":
+                if from_node.type == "decision" or from_node.type == "appState":
                     # 分支节点
                     existing = next_map.get(conn.from_node) # 查看分支节点 from_node 是否已经登记过出口信息
                     if isinstance(existing, dict):
                         existing[conn.from_port] = conn.to_node # 在字典里追加另一个 from_port 信息
                     else: # 第一次写入该分支节点的信息
                         next_map[conn.from_node] = {conn.from_port: conn.to_node}
-                elif from_node.type == "appState":
-                    continue # ToDo 完善状态节点
                 elif from_node.type == "loop":
-                    next_map[conn.from_node] = None # 循环节点无下一个节点，而是从子节点开始执行
+                    next_map[conn.from_node] = None if conn.to_node == "" else conn.to_node # 循环节点无下一个节点，而是从子节点开始执行
                 else:
                     # 普通节点
                     next_map[conn.from_node] = conn.to_node
@@ -101,13 +99,13 @@ class PythonScriptGenerator:
         # 构建 loop 组节点的子图
         loop_children_map: Dict[str, Dict[str, Any]] = {} # loop_id -> nodes & startNodeId
         for node in nodes:
-            if node.is_group and node.type == "loop":
+            if node.properties["isGroup"] and node.type == "loop":
                 child_nodes: Dict[str, Dict[str, Any]] = {} # nodeId -> type next properties(部分)
                 child_in_degree: Dict[str, int] = {}
 
                 # 循环节点子图 节点处理
                 for child in nodes:
-                    if child.group_key == node.id: # 循环节点的 id = group_key
+                    if not child.type == "loop" and child.properties.get("group", "") == node.id: # 循环节点的 id = group 循环节点无 group 属性
                         child_data: Dict[str, Any] = {"type": child.type, "next": next_map.get(child.id)}
                         if child.properties:
                             props = dict(child.properties)
@@ -139,6 +137,7 @@ class PythonScriptGenerator:
         # 构建 flow_graph（goto）
         flow_graph: Dict[str, Dict[str, Any]] = {} # nodeId -> dict{属性}
         for node in nodes:
+            # 不是循环内部节点
             if node.id in node_group_map:
                 continue
             entry: Dict[str, Any] = {"type": node.type, "next": next_map.get(node.id)}
@@ -149,7 +148,8 @@ class PythonScriptGenerator:
                     props.pop(k, None)
                 entry.update(props)
             # 循环节点 添加上子图信息
-            if node.is_group and node.type == "loop" and node.id in loop_children_map:
+            if node.properties["isGroup"] and node.type == "loop" and node.id in loop_children_map:
+                entry["iterations"] = node.properties["iterations"]
                 entry["children"] = loop_children_map[node.id]
             flow_graph[node.id] = entry
 
