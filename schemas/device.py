@@ -11,3 +11,13 @@ class DeviceInfo(BaseModel):
 class KeyEventRequest(BaseModel):
     keycode: int
     serial: str = None  # 如果有多台设备，建议前端顺便把设备 serial 传过来
+
+
+
+# 解析
+class DumpRequest(BaseModel):
+    deviceSerial: str
+# 定义返回的数据格式
+class DumpResponse(BaseModel):
+    xml: str
+    screenshot: str

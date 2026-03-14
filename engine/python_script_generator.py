@@ -31,16 +31,47 @@ class PythonScriptGenerator:
 
     # 内部实现
 
-    def _generate_internal(self, config: ScriptConfig, is_debug: bool) -> str:
-        flow_graph, start_node_id = self._build_flow_graph(config)
+    # def _generate_internal(self, config: ScriptConfig, is_debug: bool) -> str:
+    #     flow_graph, start_node_id = self._build_flow_graph(config)
+    #
+    #     flow_graph_json = json.dumps(flow_graph, ensure_ascii=False)
+    #     debug_flag = "True" if is_debug else "False"
+    #
+    #     # 读取模板文件（所有行）
+    #     lines = TEMPLATE_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
+    #
+    #     # 逐行扫描，替换含标记的配置行
+    #     new_lines = []
+    #     for line in lines:
+    #         if MARKER_FLOW_GRAPH in line:
+    #             new_lines.append(f"_FLOW_GRAPH_ = {flow_graph_json}  {MARKER_FLOW_GRAPH}\n")
+    #         elif MARKER_START_NODE in line:
+    #             new_lines.append(f'_START_NODE_ID_ = "{start_node_id}"  {MARKER_START_NODE}\n')
+    #         elif MARKER_IS_DEBUG in line:
+    #             new_lines.append(f"_IS_DEBUG_MODE_ = {debug_flag}  {MARKER_IS_DEBUG}\n")
+    #         else:
+    #             new_lines.append(line)
+    #
+    #     content = "".join(new_lines)
+    #
+    #     # 写回模板文件（覆写关键信息，其余内容不变）
+    #     TEMPLATE_PATH.write_text(content, encoding="utf-8")
+    #
+    #     # 返回文件内容（供 MinIO 上传或直接执行使用）
+    #     return content
 
-        flow_graph_json = json.dumps(flow_graph, ensure_ascii=False)
+    def _generate_internal(self, config: ScriptConfig, is_debug: bool) -> str:
+        # 1. 拿到拍平后的图结构和起点
+        instructions, start_node_id = self._compile_flow_graph(config)
+
+        # 2. 补上刚才漏掉的 instructions 变量
+        flow_graph_json = json.dumps(instructions, ensure_ascii=False)
         debug_flag = "True" if is_debug else "False"
 
-        # 读取模板文件（所有行）
+        # 3. 读取原始模板文件（只读操作，极其安全）
         lines = TEMPLATE_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
 
-        # 逐行扫描，替换含标记的配置行
+        # 4. 逐行扫描，替换含标记的配置行
         new_lines = []
         for line in lines:
             if MARKER_FLOW_GRAPH in line:
@@ -52,12 +83,10 @@ class PythonScriptGenerator:
             else:
                 new_lines.append(line)
 
+        # 5. 在内存中拼接成最终要执行的 Python 脚本代码
         content = "".join(new_lines)
 
-        # 写回模板文件（覆写关键信息，其余内容不变）
-        TEMPLATE_PATH.write_text(content, encoding="utf-8")
-
-        # 返回文件内容（供 MinIO 上传或直接执行使用）
+        # 6. 直接返回最终代码内容
         return content
 
     # 图结构计算
@@ -269,12 +298,37 @@ class PythonScriptGenerator:
         instructions = {}
         in_degree = {node.id: 0 for node in nodes}
 
-        # 1. 注册所有节点
+        # 1. 注册所有节点，并进行属性“大一统”打包
         for node in nodes:
+            # 将 node 对象安全转为字典（兼容 FastAPI 的 Pydantic 模型或普通 Python 对象）
+            node_data = node.dict() if hasattr(node, "dict") else vars(node)
+
+            # 获取基础的 properties (防止为空)
+            props = dict(node_data.get("properties", {}) or {})
+
+            # 把外层的所有其他属性“打包”进 props 里面
+            for k, v in node_data.items():
+                # 避开基础路由字段和原有的 properties 字段
+                if k not in ["id", "type", "properties"]:
+                    # 只有非 None 的值才塞进去，避免覆盖原有的默认值
+                    if v is not None:
+                        props[k] = v
+
+            # 定义需要剔除的前端 UI 无用元数据（保持引擎纯净）
+            ui_garbage_keys = [
+                "loc", "color", "icon",
+                "iconLabel", "title", "desc", "isGroup", "group"
+            ]
+
+            # 统一清洗
+            for k in ui_garbage_keys:
+                props.pop(k, None)
+
+            # 存入最终的指令集
             instructions[node.id] = {
                 "type": node.type,
-                "properties": node.properties or {},
-                "next": {}  # 统一使用字典存出口
+                "properties": props,
+                "next": {}  # 统一使用字典存出口，等待后续边解析填入
             }
 
         # 2. 绑定连线（纯粹的指针建立）
@@ -286,5 +340,4 @@ class PythonScriptGenerator:
 
         # 3. 找起点（由于图里可能有环，入度为 0 的绝对是真正的起点）
         start_node_id = next((nid for nid, deg in in_degree.items() if deg == 0), nodes[0].id if nodes else "")
-
         return instructions, start_node_id

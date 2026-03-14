@@ -16,12 +16,16 @@ null = None
 true = True
 false = False
 
+
+
 # --- 关键配置（由生成器填充）---
-_FLOW_GRAPH_ = {"6": {"type": "input", "next": null, "isGroup": false, "text": "", "elementId": ""}, "7": {"type": "loop", "next": null, "iterations": 10000, "children": {"nodes": {}, "startNodeId": ""}}, "8": {"type": "click", "next": null, "targetType": "坐标", "x": "", "y": "", "elementId": ""}}  # __FLOW_GRAPH__
-_START_NODE_ID_ = "7"  # __START_NODE__
+_FLOW_GRAPH_ = {} # __FLOW_GRAPH__
+_START_NODE_ID_ = ""  # __START_NODE__
 _IS_DEBUG_MODE_ = True  # __IS_DEBUG__
 debug_lock = threading.Event()
 engine_running = True
+runtime_state = {}
+
 
 # --- 1. 定义各个具体动作的执行函数 (Handlers) ---
 # 点击
@@ -260,115 +264,30 @@ def handle_decision(device, node):
         print(json.dumps({"type": "error", "message": f"条件检测抛出异常 '{condition}': {e}，默认走 False"}, ensure_ascii=False), flush=True)
         return "R"
 
-# 循环执行
-def handle_loop(device, node, dispatcher):
-    loop_type = node.get("loopType", "计数循环")
-    children_graph = node.get("children", {})
-    child_nodes = children_graph.get("nodes", {})
-    child_start = children_graph.get("startNodeId", "")
-    external_break_node = None # 记录要跳出的外部节点
+# 🌟 极简版：计数循环执行器 (Stateful)
+def handle_loop(device, node, current_node_id):
+    global runtime_state
 
-    # 如果没有配置子节点，直接跳过
-    if not child_nodes or not child_start:
-        print(json.dumps({"type": "log", "message": "循环节点无子节点或未设置起始节点，跳过"}, ensure_ascii=False),
-              flush=True)
-        return None
+    try:
+        max_iter = int(node.get("properties").get("iterations", 1))
+    except (ValueError, TypeError):
+        max_iter = 1
 
-    # 定义单次子图运行的函数 (迷你状态机)
-    def run_iteration():
-        nonlocal external_break_node
-        global is_debug_mode, debug_lock, engine_running
+    # 获取当前循环记忆，没有则默认 0
+    current_count = runtime_state.get(current_node_id, 0)
 
-        current_id = child_start
-        step = 0
-        max_steps = 500  # 为子循环设置一个防死循环的安全锁
+    if current_count < max_iter:
+        runtime_state[current_node_id] = current_count + 1
+        print(
+            json.dumps({"type": "log", "message": f"↻ 循环进度: {current_count + 1} / {max_iter}"}, ensure_ascii=False),
+            flush=True)
+        return "Body"  # 告诉主引擎顺着 LoopBody 端口走
+    else:
+        # 循环结束，清空记忆（为了将来可能再次进入该循环）
+        runtime_state[current_node_id] = 0
+        print(json.dumps({"type": "log", "message": f"✓ 循环完成，跳出"}, ensure_ascii=False), flush=True)
+        return "R"  # 告诉主引擎顺着 Completed 端口走
 
-        while current_id and step < max_steps:
-
-            if current_id not in child_nodes:
-                external_break_node = current_id
-                return False
-
-
-            step += 1
-            child_node_data = child_nodes.get(current_id)
-
-            if not child_node_data:
-                break  # 找不到节点，结束当前循环的这一轮次
-
-            action_type = child_node_data.get("type", "unknown")
-            next_node = child_node_data.get("next")
-            print(json.dumps({"type": "running_node", "nodeId": current_id, "action": action_type}, ensure_ascii=False),
-                  flush=True)
-
-            if is_debug_mode:
-                debug_lock.clear()  # 阻塞准备
-
-                # 向前端发送 break 协议
-                print(json.dumps({
-                    "type": "break",
-                    "nodeId": current_id,
-                    "action": action_type,
-                    "code": json.dumps(child_node_data, ensure_ascii=False)
-                }, ensure_ascii=False), flush=True)
-
-                details = {k: v for k, v in child_node_data.items() if k not in ["next", "type"]}
-                if details:
-                    print(json.dumps(
-                        {"type": "log", "message": f"  [Debug] 子节点断点：即将执行 {action_type}，参数: {details}"},
-                        ensure_ascii=False), flush=True)
-
-                # 线程挂起，等待前端点击“单步”或“继续”
-                debug_lock.wait()
-
-            if not engine_running:
-                return False  # 如果在暂停期间点击了终止，直接退出
-
-
-            # 提取执行函数并运行
-            handler_func = dispatcher.get(action_type)
-            result = None
-            if handler_func:
-                try:
-                    # 得益于你在注册字典时用的 lambda，这里直接传参即可，支持嵌套循环
-                    result = handler_func(device, child_node_data)
-                    print(json.dumps({"type": "log", "message": f"  [循环子节点] {current_id}({action_type}) 执行成功"},
-                                     ensure_ascii=False), flush=True)
-                except Exception as e:
-                    print(json.dumps({"type": "error", "message": f"  [循环子节点] {current_id} 执行失败: {e}"},
-                                     ensure_ascii=False), flush=True)
-                    raise e  # 抛出异常，让主流程捕获
-            elif action_type != "unknown":
-                print(json.dumps({"type": "log", "message": f"  未知的子动作类型: {action_type}"}, ensure_ascii=False),
-                      flush=True)
-
-            # 解析子流程的下一个节点
-            if isinstance(next_node, dict):
-                branch_key = str(result) if result else "B"  # 默认走 True/B 分支
-                current_id = next_node.get(branch_key)
-            else:
-                current_id = next_node
-            print(json.dumps({"type:": "log", "message": f"解析的下一个节点为: {current_id}"}, ensure_ascii=False),flush=True)
-
-        return True # 正常结束一轮循环 没有执行跳出节点
-    
-    # 根据循环类型执行
-    if loop_type == "计数循环":
-        try:
-            n = int(node.get("iterations", 1))
-        except (ValueError, TypeError):
-            n = 1
-
-        print(json.dumps({"type": "log", "message": f"开始计数循环，共 {n} 次"}, ensure_ascii=False), flush=True)
-        for i in range(n):
-            print(json.dumps({"type": "log", "message": f"--- 循环第 {i + 1}/{n} 次 ---"}, ensure_ascii=False),
-                  flush=True)
-            if not run_iteration():
-                print(json.dumps({"type": "log", "message": f"⚠️ 检测到连向外部节点，跳出循环！"}, ensure_ascii=False),
-                      flush=True)
-                break
-
-        return external_break_node
 
 # --- 2. 注册动作字典 ---
 ACTION_DISPATCHER = {
@@ -386,7 +305,7 @@ ACTION_DISPATCHER = {
     "notification": handle_notification,
     "network": handle_network,
     "decision": handle_decision,
-    "loop": lambda device, node: handle_loop(device, node, ACTION_DISPATCHER)
+    "loop": handle_loop,
 }
 
 def run_script():
@@ -405,8 +324,9 @@ def run_script():
     # 使用配置区的关键变量
     flow_graph = _FLOW_GRAPH_
     current_node_id = _START_NODE_ID_
-    jump_counters = {} # 记录每个跳转节点跳转次数
-    max_total_steps = 1000
+    jump_counters = {}
+    runtime_state.clear() # 初始化
+    max_total_steps = 50000
     step_count = 0
 
     print(json.dumps({"type": "log", "message": "脚本状态机开始执行..."}, ensure_ascii=False), flush=True)
@@ -471,6 +391,7 @@ def run_script():
     # daemon = True 主线程结束监听线程也结束
     listener_thread = threading.Thread(target=debug_listener, daemon=True)
     listener_thread.start()
+    call_stack = []
 
     while current_node_id and step_count < max_total_steps and engine_running:
         step_count += 1
@@ -506,13 +427,10 @@ def run_script():
             break
 
         if action_type == "jump":
-            target = node_data.get("targetNodeId")
-            max_r_str = node_data.get("maxRetries", 1) # 可动态设置最大跳转次数
-            try:
-                max_r = int(max_r_str)
-            except Exception:
-                max_r = 1
+            target = node_data.properties.get("targetNodeId")
+            max_r = int(node_data.properties.get("maxRetries", 1)) # 可动态设置最大跳转次数
             jump_counters[current_node_id] = jump_counters.get(current_node_id, 0) + 1
+
             if jump_counters[current_node_id] <= max_r:
                 print(json.dumps({"type": "log", "message": f"执行跳转 ({jump_counters[current_node_id]}/{max_r}) -> 跳转至节点: {target}"}, ensure_ascii=False), flush=True)
                 current_node_id = target
@@ -526,8 +444,11 @@ def run_script():
         result = None
         if handler_func:
             try:
-                result = handler_func(device, node_data)
-                print(json.dumps({"type": "log", "message": f"节点 {current_node_id}({action_type}) 执行成功"}, ensure_ascii=False), flush=True)
+                if action_type == "loop":
+                    result = handler_func(device, node_data, current_node_id)
+                else:
+                    result = handler_func(device, node_data)
+                    print(json.dumps({"type": "log", "message": f"节点 {current_node_id}({action_type}) 执行成功"}, ensure_ascii=False), flush=True)
             except Exception as e:
                 print(json.dumps({"type": "error", "nodeId": current_node_id, "message": f"执行失败: {e}"}, ensure_ascii=False), flush=True)
                 traceback.print_exc()
@@ -535,16 +456,28 @@ def run_script():
         elif action_type != "unknown":
             print(json.dumps({"type": "log", "message": f"未知的动作类型: {action_type}"}, ensure_ascii=False), flush=True)
 
-        if isinstance(next_node, dict): # 条件分支
-            # B True R False
-            branch_key = str(result) if result else "B" # 三元表达式
-            current_node_id = next_node.get(branch_key)
-        else:
-            # 🌟 新增判定：如果节点执行函数(如 loop)返回了一个明确的外部节点 ID (字符串)，优先采纳 (实现 Break 跳转)
-            if isinstance(result, str) and result != "" and result not in ["B", "R", "R1", "R2", "R3"]:
-                current_node_id = result
-            else:
-                current_node_id = next_node
+        # 🌟 如果当前是 Loop 节点且决定走 Body，把它自己压入栈
+        if action_type in ["loop"] and isinstance(result, str) and result in ["Body"]:
+            call_stack.append(current_node_id)
+
+        # next_node_id 逻辑
+        # 所有的节点的 next 都是字典
+        if isinstance(next_node, dict):
+            if node_data.get("type") == "loop": # 循环节点
+                # Body & R
+                branch_key = str(result) if result else "R"
+                current_node_id = next_node.get(branch_key)
+            elif node_data.get("type") == "decision": # 判断节点 B True R False
+                branch_key = str(result) if result else "B"  # 三元表达式
+                current_node_id = next_node.get(branch_key)
+            else: # 普通节点 一个分支 R
+                branch_key = "R"
+                current_node_id = next_node.get(branch_key)
+        # 如果发现没路走了（current_node_id 为空），看看栈里有没有等我们回去的循环老父亲！
+        if not current_node_id and call_stack:
+            current_node_id = call_stack.pop()  # 弹出栈顶的循环节点，强制跳回去！
+            print(json.dumps({"type": "log", "message": f"↩️ 触发隐式回弹，返回循环节点: {current_node_id}"},
+                                     ensure_ascii=False), flush=True)
 
     if step_count >= max_total_steps:
         print(json.dumps({"type": "error", "message": "警告：触发全局安全锁 (上限1000步)，强制停止以保护设备！"}, ensure_ascii=False), flush=True)

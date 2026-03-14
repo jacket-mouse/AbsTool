@@ -1,8 +1,13 @@
 import subprocess
+from urllib.request import Request
+import uiautomator2 as u2
+import base64
+import io
 from fastapi import APIRouter, HTTPException
 from typing import List
 import adbutils
-from schemas.device import DeviceInfo, KeyEventRequest
+from schemas.device import DeviceInfo, KeyEventRequest, DumpResponse, DumpRequest
+
 router = APIRouter(prefix="/api/device", tags=["device"])
 
 @router.get("/list", response_model=List[DeviceInfo])
@@ -55,7 +60,7 @@ async def list_devices():
     return devices
 
 
-@router.get("/keyevent")
+@router.post("/keyevent")
 async def trigger_keyevent(req: KeyEventRequest):
     try:
         # 2. 获取设备实例
@@ -75,3 +80,47 @@ async def trigger_keyevent(req: KeyEventRequest):
         raise HTTPException(status_code=400, detail="未检测到任何在线设备")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"按键执行失败: {str(e)}")
+
+
+@router.post("/dump-ui", response_model=DumpResponse)
+def dump_ui(req: DumpRequest):
+    """
+    处理前端的 POST 请求，抓取 UI 树和截图
+    """
+    if (not req.deviceSerial):
+        raise HTTPException(status_code=400, detail="设备序列号不能为空")
+
+    try:
+        # 连接指定设备
+        d = u2.connect(req.deviceSerial)
+
+        # 抓取 XML (compressed=False 保证获取完整节点)
+        xml_content = d.dump_hierarchy(compressed=False)
+
+        # 抓取截图 (返回 PIL Image 对象)
+        image = d.screenshot()
+
+        # 获取设备的真实屏幕分辨率 (基于截图的宽高是最准确的，能直接用于前端 Canvas 比例计算)
+        device_width = image.width
+        device_height = image.height
+
+        # 将截图转为 Base64
+        buffered = io.BytesIO()
+        # 注意：因为你的前端硬编码了 `data:image/png`，这里必须保存为 PNG 格式。
+        # 如果觉得接口响应慢，建议前端改成 image/jpeg，这里 format="JPEG", quality=80 压缩处理
+        image.save(buffered, format="PNG")
+
+        # 获取纯 Base64 字符串 (不带 data:image 前缀，交由前端拼接)
+        img_bytes = base64.b64encode(buffered.getvalue())
+        img_str = img_bytes.decode("utf-8")
+
+        return DumpResponse(
+            screenshot=img_str,
+            xml=xml_content,
+            deviceWidth=device_width,
+            deviceHeight=device_height
+        )
+
+    except Exception as e:
+        # 捕获类似设备离线、u2 服务崩溃等异常
+        raise HTTPException(status_code=500, detail=f"Dump UI 失败: {str(e)}")
