@@ -17,8 +17,8 @@ true = True
 false = False
 
 # --- 关键配置（由生成器填充）---
-_FLOW_GRAPH_ = {"5": {"type": "loop", "next": null, "isGroup": true, "iterations": 10, "children": {"nodes": {"2": {"type": "decision", "next": {"R": "3", "B": "6"}, "isGroup": false, "group": "5", "color": "#ea580c", "icon": "Operation", "iconLabel": "分", "condition": ""}, "3": {"type": "longPress", "next": null, "isGroup": false, "group": "5", "color": "#3b82f6", "icon": "Clock", "iconLabel": "长", "targetType": "坐标", "x": 3, "y": 3, "elementId": ""}}, "startNodeId": "2"}}, "6": {"type": "input", "next": null, "isGroup": false, "text": "", "elementId": ""}, "7": {"type": "loop", "next": null, "isGroup": true, "iterations": 10, "group": "5", "children": {"nodes": {"1": {"type": "click", "next": "2", "isGroup": false, "group": "7", "color": "#3b82f6", "icon": "Pointer", "iconLabel": "点", "targetType": "坐标", "x": 2, "y": 2, "elementId": ""}}, "startNodeId": "1"}}}  # __FLOW_GRAPH__
-_START_NODE_ID_ = "5"  # __START_NODE__
+_FLOW_GRAPH_ = {"6": {"type": "input", "next": null, "isGroup": false, "text": "", "elementId": ""}, "7": {"type": "loop", "next": null, "iterations": 10000, "children": {"nodes": {}, "startNodeId": ""}}, "8": {"type": "click", "next": null, "targetType": "坐标", "x": "", "y": "", "elementId": ""}}  # __FLOW_GRAPH__
+_START_NODE_ID_ = "7"  # __START_NODE__
 _IS_DEBUG_MODE_ = True  # __IS_DEBUG__
 debug_lock = threading.Event()
 engine_running = True

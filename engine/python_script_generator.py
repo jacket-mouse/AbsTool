@@ -61,7 +61,7 @@ class PythonScriptGenerator:
         return content
 
     # 图结构计算
-    def _build_flow_graph(self, config: ScriptConfig):
+    def __build_flow_graph(self, config: ScriptConfig):
         """将 ScriptConfig 转换为运行时 flow_graph dict 和起始节点 ID。"""
         node_map: Dict[str, ScriptNode] = {} # nodeId -> ScriptNode
         next_map: Dict[str, Any] = {}        # FromScriptNode -> ToScriptNode / 分支节点 dict{}
@@ -154,3 +154,137 @@ class PythonScriptGenerator:
             flow_graph[node.id] = entry
 
         return flow_graph, start_node_id
+
+    def _build_flow_graph(self, config):
+        """将 ScriptConfig 转换为运行时 flow_graph dict 和起始节点 ID（完美支持无限嵌套与跨层级连线）"""
+        nodes = config.nodes or []
+        connections = config.connections or []
+
+        node_map = {node.id: node for node in nodes}
+        next_map = {}
+        parent_map = {}
+
+        # 1. 建立 parent_map 族谱，并解析所有节点的直接 next
+        for node in nodes:
+            parent_map[node.id] = node.properties.get("group") if node.properties else None
+
+        for conn in connections:
+            if conn.from_node in node_map and conn.to_node in node_map:
+                from_node = node_map[conn.from_node]
+                if from_node.type in ["decision", "appState"]:
+                    existing = next_map.get(conn.from_node)
+                    if isinstance(existing, dict):
+                        existing[conn.from_port] = conn.to_node
+                    else:
+                        next_map[conn.from_node] = {conn.from_port: conn.to_node}
+                else:
+                    next_map[conn.from_node] = None if from_node.type == "loop" else conn.to_node
+
+        # 2. 第一次遍历：把所有节点转换为标准字典（打平）
+        flat_dict = {}
+        for node in nodes:
+            entry = {"type": node.type, "next": next_map.get(node.id)}
+            if node.properties:
+                props = dict(node.properties)
+                for k in ("loc", "category", "key", "color", "icon", "iconLabel"):
+                    props.pop(k, None)
+                entry.update(props)
+            flat_dict[node.id] = entry
+
+        # 3. 统计每个父亲拥有哪些直接儿子
+        group_to_children = {}
+        for node in nodes:
+            group_id = parent_map[node.id]
+            if group_id:
+                if group_id not in group_to_children:
+                    group_to_children[group_id] = []
+                group_to_children[group_id].append(node.id)
+
+        # 🌟 核心算法 1：局部寻祖（寻找某个节点在特定 group 下的顶级身份）
+        def get_top_child_in_group(node_id, target_group_id):
+            curr = node_id
+            while curr and parent_map.get(curr) != target_group_id:
+                curr = parent_map.get(curr)
+                if curr is None:
+                    return None  # 该节点压根不在这个 group 的势力范围内
+            return curr
+
+        # 4. 为循环节点塞入 children，并利用 Edge Lifting 寻找真正的组内起点
+        for node in nodes:
+            if node.type == "loop":
+                child_ids = group_to_children.get(node.id, [])
+                child_nodes = {cid: flat_dict[cid] for cid in child_ids}
+                child_in_degree = {cid: 0 for cid in child_ids}
+
+                # 🌟 边提升：处理所有连线
+                for conn in connections:
+                    top_from = get_top_child_in_group(conn.from_node, node.id)
+                    top_to = get_top_child_in_group(conn.to_node, node.id)
+                    # 只要起点和终点最终都归属于这个组，且代表的直接子节点不同，就计算入度
+                    if top_from and top_to and top_from != top_to:
+                        child_in_degree[top_to] += 1
+
+                # 找入度为 0 的节点作为循环内的起点
+                child_start = next((cid for cid, deg in child_in_degree.items() if deg == 0),
+                                   child_ids[0] if child_ids else "")
+
+                flat_dict[node.id]["iterations"] = flat_dict[node.id].get("iterations", 1)
+                flat_dict[node.id]["children"] = {
+                    "nodes": child_nodes,
+                    "startNodeId": child_start
+                }
+
+        # 🌟 核心算法 2：全局寻祖（寻找节点在最外层画布的顶级身份）
+        def get_root_component(node_id):
+            curr = node_id
+            while curr and parent_map.get(curr) is not None:
+                curr = parent_map.get(curr)
+            return curr
+
+        # 5. 构建最外层的 flow_graph
+        flow_graph = {}
+        root_nodes = [node.id for node in nodes if not parent_map.get(node.id)]
+        root_in_degree = {nid: 0 for nid in root_nodes}
+
+        for nid in root_nodes:
+            flow_graph[nid] = flat_dict[nid]
+
+        # 计算最外层的入度以寻找全局起点
+        for conn in connections:
+            top_from = get_root_component(conn.from_node)
+            top_to = get_root_component(conn.to_node)
+            if top_from and top_to and top_from != top_to:
+                root_in_degree[top_to] += 1
+
+        start_node_id = next((nid for nid, deg in root_in_degree.items() if deg == 0),
+                             root_nodes[0] if root_nodes else "")
+
+        return flow_graph, start_node_id
+
+    def _compile_flow_graph(self, config):
+        """编译阶段：把可视化图翻译成极简的线性指令集"""
+        nodes = config.nodes or []
+        connections = config.connections or []
+
+        instructions = {}
+        in_degree = {node.id: 0 for node in nodes}
+
+        # 1. 注册所有节点
+        for node in nodes:
+            instructions[node.id] = {
+                "type": node.type,
+                "properties": node.properties or {},
+                "next": {}  # 统一使用字典存出口
+            }
+
+        # 2. 绑定连线（纯粹的指针建立）
+        for conn in connections:
+            if conn.from_node in instructions and conn.to_node in instructions:
+                port = conn.from_port or "default"
+                instructions[conn.from_node]["next"][port] = conn.to_node
+                in_degree[conn.to_node] += 1
+
+        # 3. 找起点（由于图里可能有环，入度为 0 的绝对是真正的起点）
+        start_node_id = next((nid for nid, deg in in_degree.items() if deg == 0), nodes[0].id if nodes else "")
+
+        return instructions, start_node_id
