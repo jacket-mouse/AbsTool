@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import datetime
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 
 from engine.python_script_generator import PythonScriptGenerator
 from schemas.script_editor import ScriptConfig, ScriptNode, Connection
@@ -231,6 +231,11 @@ async def task_execute_ws_handler(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
+    except ValueError as ve:
+        error_msg = str(ve)
+        print(f"⚠️ 脚本逻辑校验未通过，拒绝运行: {error_msg}")
+        # 向前端抛出 400 Bad Request，告诉用户是他画的图有问题
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
         print(f"[TaskExecute] Error: {e}")
     finally:

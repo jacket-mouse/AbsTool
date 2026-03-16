@@ -145,60 +145,27 @@ def handle_app_state(device, node):
 
 # 解锁屏幕
 def handle_unlock(device, node):
-    unlock_type = node.get("unlockType", "密码")
     device.screen_on()
     device.swipe_ext("up", scale=0.8)
     time.sleep(1)
-    if unlock_type == "手势":
-        gesture = node.get("gesture", [])
-        if not isinstance(gesture, list):
-            try:
-                gesture = [int(i.strip()) for i in str(gesture).split(",") if i.strip().isdigit()]
-            except Exception:
-                gesture = []
-        pattern_view = device(classNameMatches="(?i).*LockPatternView.*")
-        if pattern_view.exists:
-            bounds = pattern_view.info['bounds']
-            left, top, right, bottom = bounds['left'], bounds['top'], bounds['right'], bounds['bottom']
-            w = right - left
-            h = bottom - top
-            x_c = [left + w/6, left + w/2, left + w*5/6]
-            y_c = [top + h/6, top + h/2, top + h*5/6]
-        else:
-            width = device.info['displayWidth']
-            height = device.info['displayHeight']
-            x_c = [width*0.2, width*0.5, width*0.8]
-            y_c = [height*0.55, height*0.7, height*0.85]
-        points = []
-        for idx in gesture:
-            try:
-                idx_int = int(idx)
-                row = idx_int // 3
-                col = idx_int % 3
-                points.append((x_c[col], y_c[row]))
-            except Exception:
-                pass
-        if points:
-            device.swipe_points(points, 0.05)
+    pwd = str(node.get("password", ""))
+    for char in pwd:
+        btn = device(text=char)
+        if not btn.exists:
+            btn = device(description=char)
+        if btn.exists:
+            btn.click()
+        elif char.isdigit():
+            device.press(int(char) + 7)
+        time.sleep(0.2)
+    time.sleep(0.5)
+    enter_btn = device(textMatches="(?i)(确认|确定|完成|done|enter)")
+    if not enter_btn.exists:
+        enter_btn = device(descriptionMatches="(?i)(确认|确定|完成|done|enter)")
+    if enter_btn.exists:
+        enter_btn.click()
     else:
-        pwd = str(node.get("password", ""))
-        for char in pwd:
-            btn = device(text=char)
-            if not btn.exists:
-                btn = device(description=char)
-            if btn.exists:
-                btn.click()
-            elif char.isdigit():
-                device.press(int(char) + 7)
-            time.sleep(0.2)
-        time.sleep(0.5)
-        enter_btn = device(textMatches="(?i)(确认|确定|完成|done|enter)")
-        if not enter_btn.exists:
-            enter_btn = device(descriptionMatches="(?i)(确认|确定|完成|done|enter)")
-        if enter_btn.exists:
-            enter_btn.click()
-        else:
-            device.press("enter")
+        device.press("enter")
 
 # 屏幕亮度
 def handle_brightness(device, node):
