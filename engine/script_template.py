@@ -468,12 +468,29 @@ def run_script():
                 branch_key = str(result) if result else "R"
                 current_node_id = next_node.get(branch_key)
             elif node_data.get("type") == "decision": # 判断节点 B True R False
-                branch_key = str(result) if result else "B"  # 三元表达式
+                branch_key = str(result) if result in ["B", "R"] else "R"
+                other_key = "R" if branch_key == "B" else "B" # 获取到另一个分支
+
                 current_node_id = next_node.get(branch_key)
+                other_node_id = next_node.get(other_key)
+
+                # 防止判断节点两个有没连的
+                cur_type = flow_graph.get(current_node_id, {}).get("type") if current_node_id else None
+                other_type = flow_graph.get(other_node_id, {}).get("type") if other_node_id else None
+
+                if cur_type != "loop" and other_type == "loop": # 走了不是 loop 的那一个分支需要 pop 一下退出循环
+                    if call_stack: # 防止条件判断不在循环中
+                        popped_loop = call_stack.pop()
+                    print(json.dumps({"type": "log", "message": f"弹出栈{popped_loop}"}, ensure_ascii=False), flush=True)
+
+                # if not current_node_id and call_stack:
+                #     next_node.get(flow_graph.get(call_stack.pop()).get("next").get("R"))
+
             else: # 普通节点 一个分支 R
                 branch_key = "R"
                 current_node_id = next_node.get(branch_key)
-        # 如果发现没路走了（current_node_id 为空），看看栈里有没有等我们回去的循环老父亲！
+
+        # 如果发现没路走了（current_node_id 为空），看看栈里有没有
         if not current_node_id and call_stack:
             current_node_id = call_stack.pop()  # 弹出栈顶的循环节点，强制跳回去！
             print(json.dumps({"type": "log", "message": f"↩️ 触发隐式回弹，返回循环节点: {current_node_id}"},
