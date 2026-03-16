@@ -6,7 +6,7 @@ import os
 import json
 import tempfile
 import asyncio
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 
 PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/.venv/bin/python3"
 python_gen = PythonScriptGenerator()
@@ -141,6 +141,11 @@ async def script_debug_ws_handler(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
+    except ValueError as ve:
+        error_msg = str(ve)
+        print(f"⚠️ 脚本逻辑校验未通过，拒绝调试: {error_msg}")
+        # 向前端抛出 400 Bad Request，告诉用户是他画的图有问题
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
         print(f"[ScriptDebug] 发生致命错误: {e}")
     finally:

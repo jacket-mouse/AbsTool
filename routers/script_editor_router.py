@@ -23,11 +23,6 @@ def save_script(request: SaveRequest, service: ScriptService = Depends(get_scrip
     return service.save_script(request)
 
 
-@router.post("/validate", response_model=ValidateResponse)
-def validate_script(request: ValidateRequest, service: ScriptService = Depends(get_script_service)):
-    return service.validate_script(request)
-
-
 @router.post("/preview", response_model=PreviewResponse)
 def preview_script(request: PreviewRequest, service: ScriptService = Depends(get_script_service)):
     return service.preview_script(request)

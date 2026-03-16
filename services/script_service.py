@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -96,6 +97,11 @@ class ScriptService:
                 py_file = f"scripts/{script_id}/{new_version}.py"
                 self.minio.upload_file(py_file, python_code, "text/x-python")
                 print(f"成功生成并存储 Python 脚本至: {py_file}")
+            except ValueError as ve:
+                error_msg = str(ve)
+                print(f"⚠️ 脚本逻辑校验未通过，拒绝保存: {error_msg}")
+                # 向前端抛出 400 Bad Request，告诉用户是他画的图有问题
+                raise HTTPException(status_code=400, detail=error_msg)
             except Exception as e:
                 print(f"自动生成 Python 脚本失败: {e}")
 
@@ -148,24 +154,6 @@ class ScriptService:
             print(f"保存脚本异常: {e}")
             return SaveResponse(success=False, script_id=script_id, version=current_version, message=f"Error: {e}")
 
-    # ─── 校验脚本 ────────────────────────────────────────────────────────────
-
-    def validate_script(self, request: ValidateRequest) -> ValidateResponse:
-        content = request.content
-        errors = []
-
-        if content is None:
-            errors.append("脚本内容不能为空")
-            return ValidateResponse(valid=False, errors=errors)
-
-        if not content.nodes:
-            errors.append("脚本必须包含至少一个节点")
-
-        for node in (content.nodes or []):
-            if not node.type:
-                errors.append(f"节点 {node.id} 类型缺失")
-
-        return ValidateResponse(valid=len(errors) == 0, errors=errors)
 
 
     # ─── 加载最新版本 ────────────────────────────────────────────────────────

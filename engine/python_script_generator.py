@@ -144,7 +144,7 @@ class PythonScriptGenerator:
                 "valid": False,
                 "has_islands": True,
                 "isolated_nodes": list(all_nodes),
-                "message": "未找到有效的起点 (Start) 节点连接，所有节点均无法执行！"
+                "message": "未找到有效的起点 (Start) 节点连接，保存失败"
             }
 
         # 2. BFS 遍历 (使用简单的 List 作为队列)
