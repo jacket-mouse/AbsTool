@@ -285,8 +285,8 @@ class ScriptService:
             if info:
                 if request.name:
                     info.name = request.name
-                if request.type:
-                    info.type = request.type
+                if request.status:
+                    info.status = request.status
                 self.db.commit()
                 return UpdateResponse(success=True, message="更新成功")
             return UpdateResponse(success=False, message="脚本未找到")

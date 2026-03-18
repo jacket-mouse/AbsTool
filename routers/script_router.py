@@ -18,7 +18,7 @@ def list_scripts(request: ScriptListRequest, service: ScriptService = Depends(ge
     return Result(data=service.get_script_list(request))
 
 
-@router.delete("/{script_id}", response_model=Result[DeleteResponse])
+@router.delete("/delete/{script_id}", response_model=Result[DeleteResponse])
 def delete_script(
         script_id: str,
         service: ScriptService = Depends(get_script_service)

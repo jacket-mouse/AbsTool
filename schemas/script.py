@@ -36,7 +36,7 @@ class DeleteResponse(BaseModel):
 class UpdateRequest(BaseModel):
     script_id: str = Field(alias="scriptId", description="脚本ID")
     name: str = Field(description="脚本名称")
-    type: str = Field(description="脚本类型")
+    status: str = Field(description="脚本状态")
 
     class Config:
         populate_by_name = True
