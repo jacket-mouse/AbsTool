@@ -56,10 +56,3 @@ def get_detail(template_id: str, service: TemplateService = Depends(get_template
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-
-@router.get("/python/{template_id}")
-def generate_python(template_id: str, service: TemplateService = Depends(get_template_service)):
-    try:
-        return service.generate_python_for_template(template_id)
-    except Exception as e:
-        return f"# Generate Error: {e}"

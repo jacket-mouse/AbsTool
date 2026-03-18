@@ -1,5 +1,5 @@
 from models.base import Base
-from sqlalchemy import Column, DateTime, String, Integer, BigInteger
+from sqlalchemy import Column, DateTime, String, Integer, BigInteger, ForeignKey
 
 
 class ScriptTemplateRel(Base):
@@ -7,8 +7,8 @@ class ScriptTemplateRel(Base):
     __tablename__ = "script_template_rel"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    template_id = Column(String)
-    script_id = Column(String)
+    template_id = Column(String, ForeignKey('script_template.template_id'))
     is_default = Column(Integer)   # 1=是, 0=否
     sort_order = Column(Integer)
     create_time = Column(DateTime)
+
