@@ -8,7 +8,6 @@
 """
 import json
 from pathlib import Path
-from typing import Any, Dict
 
 from schemas.script_editor import ScriptConfig, ScriptNode, Connection
 
@@ -101,7 +100,7 @@ class PythonScriptGenerator:
             # 定义需要剔除的前端 UI 无用元数据（保持引擎纯净）
             ui_garbage_keys = [
                 "loc", "color", "icon",
-                "iconLabel", "title", "desc", "isGroup", "group"
+                "iconLabel", "title", "desc", "isGroup", "group", "desc"
             ]
 
             # 统一清洗

@@ -21,3 +21,5 @@ class DumpRequest(BaseModel):
 class DumpResponse(BaseModel):
     xml: str
     screenshot: str
+    deviceWidth: int
+    deviceHeight: int

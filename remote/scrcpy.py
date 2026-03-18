@@ -114,7 +114,7 @@ class ScrcpyServer:
             'CLASSPATH=/data/local/tmp/scrcpy_server.jar',
             'app_process', '/',
             f'com.genymobile.scrcpy.Server', self.version,
-            'log_level=info', 'max_size=1024', 'max_fps=30',
+            'log_level=info','max_fps=30',
             'video_bit_rate=8000000', 'tunnel_forward=true',
             'send_frame_meta=true',
             f'control={"true" if control else "false"}',

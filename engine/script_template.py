@@ -28,48 +28,71 @@ runtime_state = {}
 
 
 # --- 1. 定义各个具体动作的执行函数 (Handlers) ---
-# 点击
-def handle_click(device, node):
-    target_type = node.get("targetType", "")
-    element_id = node.get("elementId", "")
-    if target_type == "元素 ID" and element_id:
-        device(resourceId=element_id).click()
+def handle_click(device, node_data):
+    props = node_data.get("properties", {})
+
+    target_type = props.get("targetType", "")
+    xpath_val = props.get("elementId", "")
+
+    if target_type in ["XPath", "元素 ID"]:
+        if not xpath_val:
+            raise Exception(f"点击失败：目标类型为 {target_type}，但未提供定位参数")
+
+        # 使用 uiautomator2 的 xpath 选择器
+        elem_selector = device.xpath(xpath_val)
+
+        if elem_selector.wait(5.0):
+            # 普通点击不需要计算中心点，uiautomator2 的 xpath 对象直接支持 .click()
+            elem_selector.click()
+        else:
+            raise Exception(f"点击失败：5秒内未找到目标 [{xpath_val}]")
+
+    elif target_type == "坐标":
+        x = props.get("x", 0)
+        y = props.get("y", 0)
+
+        device.click(x, y)
+
     else:
-        x = node.get("x", 0)
-        y = node.get("y", 0)
-        device.click(int(x), int(y))
+        raise Exception(f"点击节点配置错误：未知的目标类型 [{target_type}]")
 
 # 长按
-def handle_long_press(device, node):
-    target_type = node.get("targetType", "")
-    element_id = node.get("elementId", "")
+def handle_long_press(device, node_data):
+    props = node_data.get("properties", {})
+
+    target_type = props.get("targetType", "")
+    xpath_val = props.get("elementId", "")
+
     try:
-        dur_sec = float(node.get("duration", 1000)) / 1000.0
+        dur_sec = float(props.get("duration", 1000)) / 1000.0
     except (ValueError, TypeError):
         dur_sec = 1.0
-    if target_type == "元素 ID" and element_id:
-        elem = device(resourceId=element_id)
-        if elem.wait(timeout=5.0):
-            elem.long_click(duration=dur_sec)
+
+    if target_type == "元素 ID" and xpath_val:
+        if not xpath_val:
+            raise Exception("长按失败：目标类型为 XPath，但未提供 xpath 参数")
+
+        # 使用 uiautomator2 的 xpath 选择器
+        elem_selector = device.xpath(xpath_val)
+
+        # wait(5.0) 如果找到元素会返回真实的 element 对象，找不到返回 None
+        if elem_selector.wait(5.0):
+            # 获取元素的中心点坐标，转化为物理坐标点击（完美兼容自定义 duration）
+            center_x, center_y = elem_selector.get().center()
+            device.long_click(center_x, center_y, duration=dur_sec)
         else:
-            raise Exception(f"长按失败：5秒内未找到元素 ID [{element_id}]")
+            raise Exception(f"长按失败：5秒内未找到 XPath [{xpath_val}]")
+
     elif target_type == "坐标":
-        x = node.get("x", 0)
-        y = node.get("y", 0)
-        canvas_width = 1080.0
-        canvas_height = 1920.0
-        real_width = device.info['displayWidth']
-        real_height = device.info['displayHeight']
-        real_x = int((float(x) / canvas_width) * real_width)
-        real_y = int((float(y) / canvas_height) * real_height)
-        real_x = max(0, min(real_x, real_width - 1))
-        real_y = max(0, min(real_y, real_height - 1))
-        device.long_click(real_x, real_y, duration=dur_sec)
+        x = props.get("x", 0)
+        y = props.get("y", 0)
+        device.long_click(x, y, duration=dur_sec)
     else:
         raise Exception("长按节点配置错误：未知的目标类型或缺少参数")
 
 # 滑动
 def handle_swipe(device, node):
+    node = node.get("properties", {})
     sx = node.get("startX", 0)
     sy = node.get("startY", 0)
     ex = node.get("endX", 0)
@@ -83,45 +106,64 @@ def handle_swipe(device, node):
     device.swipe(int(sx), int(sy), int(ex), int(ey), duration=dur)
 
 # 输入
-def handle_input(device, node):
-    text = str(node.get("text", ""))
-    element_id = node.get("elementId", "")
-    if element_id:
-        device(resourceId=element_id).set_text(text)
+def handle_input(device, node_data):
+    props = node_data.get("properties", {})
+
+    text = str(props.get("text", ""))
+    xpath_val = props.get("xpath", props.get("elementId", ""))
+
+    if xpath_val:
+        # 使用 uiautomator2 的 xpath 选择器
+        elem_selector = device.xpath(xpath_val)
+
+        # wait(5.0) 寻找输入框，最多等 5 秒
+        if elem_selector.wait(5.0):
+            # uiautomator2 的 xpath 选择器直接支持 set_text 方法
+            elem_selector.set_text(text)
+        else:
+            raise Exception(f"输入失败：5秒内未找到输入框 [{xpath_val}]")
     else:
-        print(json.dumps({"type": "log", "message": "[Error] input操作需要元素ID绑定"}, ensure_ascii=False), flush=True)
+        raise Exception("输入失败：未提供 XPath 定位参数")
 
 # 等待
 def handle_wait(device, node):
-    duration_str = node.get("duration", "1000")
-    try:
-        dur_sec = float(duration_str) / 1000.0
-    except Exception:
-        dur_sec = 1.0
+    props = node.get("properties", {})
+    duration_str = props.get("duration", "1000")
+    dur_sec = float(duration_str) / 1000.0
+    print(json.dumps({"type": "log", "message": f"等待{duration_str}ms"}, ensure_ascii=False), flush=True)
     time.sleep(dur_sec + random.uniform(0, 0.3))
 
-# 打开 APP
+# 打开 app
 def handle_open_app(device, node):
-    pkg = node.get("packageName", "")
+    props = node.get("properties", {})
+    pkg = props.get("packageName", props.get("packagename", ""))
+
     if pkg:
+        # uiautomator2 原生方法，直接拉起对应包名的 App
         device.app_start(pkg)
+    else:
+        # 🌟 细节 2：如果没有包名，绝不默默跳过，直接抛异常给前端
+        raise Exception("打开应用失败：未提供包名 (packageName) 参数")
 
 # 关闭 APP
 def handle_close_app(device, node):
-    pkg = node.get("packageName", "")
+    props = node.get("properties", {})
+    pkg = props.get("packageName", props.get("packagename", ""))
     if pkg:
         device.app_stop(pkg)
 
 # 切换前台
 def handle_foreground(device, node):
-    pkg = node.get("packageName", "")
+    props = node.get("properties", {})
+    pkg = props.get("packageName", props.get("packagename", ""))
     if pkg:
         device.app_start(pkg, stop=False)
         print(json.dumps({"type": "log", "message": f"系统提示件: 切换包名 {pkg} 至前台操作完毕"}, ensure_ascii=False), flush=True)
 
 # 获取 APP 当前状态
 def handle_app_state(device, node):
-    pkg = node.get("packageName", "")
+    props = node.get("properties", {})
+    pkg = props.get("packageName", props.get("packagename", ""))
     if not pkg:
         return "R3"
     current = device.app_current()
@@ -148,7 +190,7 @@ def handle_unlock(device, node):
     device.screen_on()
     device.swipe_ext("up", scale=0.8)
     time.sleep(1)
-    pwd = str(node.get("password", ""))
+    pwd = str(node.get("properties", "").get("password", ""))
     for char in pwd:
         btn = device(text=char)
         if not btn.exists:
@@ -168,24 +210,40 @@ def handle_unlock(device, node):
         device.press("enter")
 
 # 屏幕亮度
-def handle_brightness(device, node):
-    brightness_raw = node.get("brightness", 50)
+def handle_brightness(device, node_data):
+    props = node_data.get("properties", {})
+    brightness_raw = props.get("brightness", 50)
+
     try:
         val = float(brightness_raw)
-        val = max(0.0, min(100.0, val))
+        val = max(0.0, min(100.0, val))  # 限制在 0-100 之间
     except (ValueError, TypeError):
         val = 50.0
-    device.shell(["settings", "put", "system", "screen_brightness_mode", "0"])
-    float_val = val / 100.0
-    output, exit_code = device.shell(["cmd", "display", "set-brightness", str(float_val)])
-    if exit_code != 0:
-        v_255 = int(val * 255 / 100)
-        device.shell(["settings", "put", "system", "screen_brightness", str(v_255)])
+
+    # 计算不同安卓版本所需的亮度值格式
+    float_val = val / 100.0  # 用于较新系统的 0.0 - 1.0 格式
+    int_val = int(val * 255 / 100)  # 传统数据库 0 - 255 格式
+
+    try:
+        # 1. 强制关闭自动亮度 (如果不关，修改会在一秒后被传感器覆盖回去)
+        device.shell("settings put system screen_brightness_mode 0")
+        # 2. 写入传统整型配置 (修改系统设置数据库，绝大部分国产机型靠这个生效)
+        device.shell(f"settings put system screen_brightness {int_val}")
+        # 3. 写入新版浮点型配置 (修改 Android 11+ 的数据库)
+        device.shell(f"settings put system screen_brightness_float {float_val}")
+        # 🌟 修复 2：绝不能把 int_val (如 127) 传给 cmd display！
+        # 只用 float_val 去通知系统立刻刷新亮度，避免触发 >1.0 拉满的 Bug
+        device.shell(f"cmd display set-brightness {float_val}")
+
+    except Exception as e:
+        # 亮度调节不应该阻断主流程，使用软隔离
+        print(json.dumps({"type": "log", "message": f"⚠️ 屏幕亮度调节部分受限: {e}"}, ensure_ascii=False), flush=True)
 
 # 模拟通知
 def handle_notification(device, node):
-    title = str(node.get("notifTitle", "系统通知"))
-    content = str(node.get("notifContent", ""))
+    props = node.get("properties", {})
+    title = str(props.get("notifTitle", "系统通知"))
+    content = str(props.get("notifContent", ""))
     try:
         res = device.shell(["cmd", "notification", "post", "-t", title, "mock_tag", content])
         if hasattr(res, 'exit_code') and res.exit_code != 0:
@@ -195,7 +253,8 @@ def handle_notification(device, node):
 
 # 切换网络
 def handle_network(device, node):
-    network_type = node.get("networkType", "")
+    props = node.get("properties", {})
+    network_type = props.get("networkType", "")
     if network_type == "WiFi":
         device.shell(["cmd", "connectivity", "airplane-mode", "disable"])
         device.shell(["settings", "put", "global", "airplane_mode_on", "0"])
@@ -214,22 +273,48 @@ def handle_network(device, node):
         device.shell(["am", "broadcast", "-a", "android.intent.action.AIRPLANE_MODE", "--ez", "state", "true"])
 
 # 分支判断
+# B true R false
 def handle_decision(device, node):
-    condition = str(node.get("condition", "")).strip()
-    if not condition:
-        return "R"
-    try:
-        local_ctx = {"device": device}
-        result = eval(condition, {"__builtins__": __builtins__}, local_ctx)
-        if result:
-            print(json.dumps({"type": "log", "message": f"条件检测 '{condition}' 解析为 True"}, ensure_ascii=False), flush=True)
-            return "B"
-        else:
-            print(json.dumps({"type": "log", "message": f"条件 '{condition}' 不满足 [False 分支]"}, ensure_ascii=False), flush=True)
+    props = node.get("properties", {})
+    detection_type = props.get("detectionType", "")
+    if detection_type == "应用状态":
+        app_package = props.get("appPackageName", "")
+        app_running_state = props.get("appRunningState", "")
+        if not app_package:
+            print(json.dumps({"type": "log", "message": f"不存在的包名"},ensure_ascii=False), flush=True)
             return "R"
-    except Exception as e:
-        print(json.dumps({"type": "error", "message": f"条件检测抛出异常 '{condition}': {e}，默认走 False"}, ensure_ascii=False), flush=True)
-        return "R"
+        current = device.app_current()
+        if app_running_state == "前台运行":
+            if current and current.get("package") == app_package:
+                print(json.dumps({"type": "log", "message": f"{app_package}在前台运行"}, ensure_ascii=False), flush=True)
+                return "B"
+            else:
+                print(json.dumps({"type": "log", "message": f"{app_package}不在前台运行"}, ensure_ascii=False),
+                      flush=True)
+                return "R"
+
+        else:
+            pid_info = device.shell(f"pidof {app_package}").output.strip()
+            if pid_info and app_running_state == "后台运行":
+                print(json.dumps({"type": "log", "message": f"{app_package}在后台运行"}, ensure_ascii=False),
+                      flush=True)
+                return "B"
+            elif not pid_info and app_running_state == "未运行":
+                print(json.dumps({"type": "log", "message": f"{app_package}未运行"}, ensure_ascii=False),
+                      flush=True)
+                return "B"
+            elif pid_info and app_running_state == "未运行":
+                print(json.dumps({"type": "log", "message": f"{app_package}在后台运行"}, ensure_ascii=False),
+                      flush=True)
+                return "R"
+            else:
+                print(json.dumps({"type": "log", "message": f"{app_package}未运行"}, ensure_ascii=False))
+                return "R"
+
+    elif detection_type == "设备状态":
+        return
+    elif detection_type == "元素存在性":
+        return
 
 # 🌟 极简版：计数循环执行器 (Stateful)
 def handle_loop(device, node, current_node_id):
