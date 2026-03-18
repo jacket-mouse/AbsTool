@@ -312,9 +312,19 @@ def handle_decision(device, node):
                 return "R"
 
     elif detection_type == "设备状态":
+        
         return
     elif detection_type == "元素存在性":
-        return
+        xpath = props.get("xpath", "")
+        if xpath:
+            # 不要用瞬间检测，给 UI 渲染留 2 秒的缓冲时间
+            # wait(2.0) 如果在 2 秒内找到了元素，会返回 Element 对象 (隐式转换为 True)
+            # 如果 2 秒后还没找到，返回 None (隐式转换为 False)
+            if device.xpath(xpath).wait(2.0):
+                return "B"
+        else:
+            print(json.dumps({"type": "log", "message": "分支判断警告: 元素存在性检测未提供 xpath 参数"},
+                             ensure_ascii=False), flush=True)
 
 # 🌟 极简版：计数循环执行器 (Stateful)
 def handle_loop(device, node, current_node_id):
