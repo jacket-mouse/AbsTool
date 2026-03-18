@@ -2,6 +2,8 @@
 # 自动生成的 Android 行为模拟脚本 (State Machine 核心引擎驱动)
 # 关键配置区域（由生成器自动填充，请勿手动修改标注行）
 # ============================================================
+import re
+
 import uiautomator2 as u2
 import time
 import random
@@ -312,8 +314,88 @@ def handle_decision(device, node):
                 return "R"
 
     elif detection_type == "设备状态":
-        
-        return
+        device_state_type = props.get("deviceStateType", "")
+        if device_state_type == "网络类型":
+            target_networks = props.get("networkTypes", "")  # 假设前端传来 ["WiFi", "数据网络"]
+
+            # 获取 WiFi IP (如果有 IP 说明连了 WiFi)
+            wlan_ip = device.wlan_ip
+            has_wifi = bool(wlan_ip)
+
+            # 简单粗暴的探针逻辑：
+            if "WiFi" == target_networks:
+                if has_wifi:
+                    print(json.dumps({"type": "log", "message": "WiFi 模式"}, ensure_ascii=False), flush=True)
+                    return "B"
+                else:
+                    return "R"
+            elif "数据网络" == target_networks:
+                if not has_wifi:
+                    # 如果没连 WiFi，但能 ping 通百度，粗略认为是数据网络
+                    ping_res = device.shell("ping -c 1 -w 2 223.5.5.5").exit_code
+                    if ping_res == 0:
+                        print(json.dumps({"type": "log", "message": "数据模式"}, ensure_ascii=False), flush=True)
+                        return "B"
+                    else:
+                        return "R"
+                else:
+                    return "R"
+            elif "飞行模式" == target_networks:
+                if has_wifi:
+                    return "R"
+                else:
+                    ping_res = device.shell("ping -c 1 -w 2 223.5.5.5").exit_code
+                    if ping_res == 0:
+                        return "R"
+                    else:
+                        return "B"
+
+        elif device_state_type == "电池电量":
+            battery_op = props.get("batteryOp", ">")
+            battery_val = props.get("batteryValue")
+
+            if battery_val is not None:
+                battery_val = float(battery_val)
+                # 调用安卓底层电池接口
+                battery_info = device.shell("dumpsys battery").output
+                match = re.search(r"level:\s*(\d+)", battery_info)
+
+                if match:
+                    current_level = float(match.group(1))
+                    # 数学逻辑映射
+                    if battery_op == ">" and current_level > battery_val:
+                        return "B"
+                    elif battery_op == "<" and current_level < battery_val:
+                        return "B"
+                    elif battery_op == "==" and current_level == battery_val:
+                        return "B"
+                    elif battery_op == ">=" and current_level >= battery_val:
+                        return "B"
+                    elif battery_op == "<=" and current_level <= battery_val:
+                        return "B"
+            return "R"
+        elif device_state_type == "屏幕开启":
+            target_screen = props.get("screenOn", "开启")  # "开启" 或 "关闭"
+            # uiautomator2 原生自带了极速的屏幕状态探针
+            is_screen_on = device.info.get("screenOn", False)
+
+            if target_screen == "开启" and is_screen_on:
+                return "B"
+            elif target_screen == "关闭" and not is_screen_on:
+                return "B"
+            return "R"
+        elif device_state_type == "正在充电":
+            target_charging = props.get("charging", "是")  # "是" 或 "否"
+            battery_info = device.shell("dumpsys battery").output
+
+            # 在 dumpsys battery 中，status: 2 代表正在充电，5 代表充满依然插着电
+            is_charging = "status: 2" in battery_info or "status: 5" in battery_info or "AC powered: true" in battery_info or "USB powered: true" in battery_info
+
+            if target_charging == "是" and is_charging:
+                return "B"
+            elif target_charging == "否" and not is_charging:
+                return "B"
+            return "R"
     elif detection_type == "元素存在性":
         xpath = props.get("xpath", "")
         if xpath:
@@ -326,7 +408,7 @@ def handle_decision(device, node):
             print(json.dumps({"type": "log", "message": "分支判断警告: 元素存在性检测未提供 xpath 参数"},
                              ensure_ascii=False), flush=True)
 
-# 🌟 极简版：计数循环执行器 (Stateful)
+# 计数循环执行器 (Stateful)
 def handle_loop(device, node, current_node_id):
     global runtime_state
 
