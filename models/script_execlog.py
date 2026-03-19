@@ -8,7 +8,6 @@ class ScriptExecLog(Base):
 
     log_id = Column(String, primary_key=True)
     task_id = Column(String)
-    template_id = Column(String)
     device_id = Column(String)
     exec_status = Column(String)
     log_file_url = Column(String)

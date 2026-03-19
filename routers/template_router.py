@@ -14,6 +14,7 @@ def get_template_service(db: Session = Depends(get_db)):
     return TemplateService(db=db)
 
 
+# ─── 1. POST /api/template/list ──────────────────────────────────────────────
 @router.post("/list")
 def list_templates(request: TemplateListRequest, service: TemplateService = Depends(get_template_service)):
     result = service.list_templates(request.page, request.size, request.keyword)
@@ -26,6 +27,7 @@ def list_templates(request: TemplateListRequest, service: TemplateService = Depe
     }
 
 
+# ─── 2. GET /api/template/detail/{templateId} ────────────────────────────────
 @router.get("/detail/{template_id}")
 def get_detail(template_id: str, service: TemplateService = Depends(get_template_service)):
     try:
@@ -35,6 +37,7 @@ def get_detail(template_id: str, service: TemplateService = Depends(get_template
         return {"success": False, "message": str(e)}
 
 
+# ─── 3. POST /api/template/create ────────────────────────────────────────────
 @router.post("/create")
 def create_template(request: TemplateCreateRequest, service: TemplateService = Depends(get_template_service)):
     try:
@@ -45,6 +48,7 @@ def create_template(request: TemplateCreateRequest, service: TemplateService = D
         return {"success": False, "message": str(e)}
 
 
+# ─── 4. PUT /api/template/update ─────────────────────────────────────────────
 @router.put("/update")
 def update_template(request: TemplateUpdateRequest, service: TemplateService = Depends(get_template_service)):
     try:
@@ -54,6 +58,7 @@ def update_template(request: TemplateUpdateRequest, service: TemplateService = D
         return {"success": False, "message": str(e)}
 
 
+# ─── 5. DELETE /api/template/delete/{templateId} ─────────────────────────────
 @router.delete("/delete/{template_id}")
 def delete_template(template_id: str, service: TemplateService = Depends(get_template_service)):
     try:

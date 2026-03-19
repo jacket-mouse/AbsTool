@@ -11,6 +11,7 @@ class TaskDto(BaseModel):
     cron_expression: Optional[str] = Field(default=None, alias="cronExpression")
     device_id: Optional[str] = Field(default=None, alias="deviceId")
     status: Optional[str] = None
+    type: Optional[str] = None     # CRON / MANUAL
     creator: Optional[str] = None
 
     class Config:
@@ -34,6 +35,7 @@ class TaskCreateRequest(BaseModel):
     template_id: str = Field(alias="templateId")
     cron_expression: str = Field(alias="cronExpression")
     device_id: str = Field(alias="deviceId")
+    type: str                      # CRON / MANUAL
 
     class Config:
         populate_by_name = True
@@ -46,6 +48,7 @@ class TaskUpdateRequest(BaseModel):
     cron_expression: Optional[str] = Field(default=None, alias="cronExpression")
     device_id: Optional[str] = Field(default=None, alias="deviceId")
     status: Optional[str] = None
+    type: Optional[str] = None     # CRON / MANUAL
 
     class Config:
         populate_by_name = True

@@ -11,7 +11,7 @@
  Target Server Version : 80405 (8.4.5)
  File Encoding         : 65001
 
- Date: 19/03/2026 19:12:22
+ Date: 19/03/2026 19:46:54
 */
 
 SET NAMES utf8mb4;
@@ -23,16 +23,14 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `script_exec_log`;
 CREATE TABLE `script_exec_log` (
   `log_id` varchar(32) NOT NULL COMMENT '日志 ID',
-  `task_id` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '关联任务 ID',
-  `template_id` varchar(32) DEFAULT NULL COMMENT '关联模板 ID',
+  `task_id` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '关联任务 ID',
   `device_id` varchar(255) NOT NULL COMMENT '设备 ID',
   `exec_status` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '执行结果: SUCCESS, FAILED, ERROR',
   `log_file_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'MinIO中完整的日志文件路径',
   `start_time` datetime NOT NULL COMMENT '开始时间',
   `end_time` datetime NOT NULL COMMENT '结束时间',
   PRIMARY KEY (`log_id`),
-  KEY `task_id` (`task_id`),
-  KEY `idx_template_time` (`template_id`,`start_time` DESC) USING BTREE
+  KEY `idx_task_time` (`task_id`,`start_time` DESC) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='脚本执行日志表';
 
 -- ----------------------------
@@ -84,7 +82,7 @@ CREATE TABLE `script_template_rel` (
   KEY `script_info` (`script_id`),
   CONSTRAINT `script_info` FOREIGN KEY (`script_id`) REFERENCES `script_info` (`script_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `script_template_rel_ibfk_1` FOREIGN KEY (`template_id`) REFERENCES `script_template` (`template_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='脚本-模板关联表';
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='脚本-模板关联表';
 
 -- ----------------------------
 -- Table structure for script_version
@@ -130,6 +128,7 @@ CREATE TABLE `task_info` (
   `cron_expression` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'Cron定时表达式',
   `device_id` varchar(255) NOT NULL COMMENT '设备 ID',
   `status` varchar(32) NOT NULL COMMENT '任务状态: ENABLE,DISABLE',
+  `type` varchar(32) NOT NULL COMMENT '任务类型: CRON,MANUAL',
   PRIMARY KEY (`task_id`),
   KEY `creator` (`creator`),
   KEY `script_template` (`template_id`),

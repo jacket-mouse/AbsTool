@@ -13,3 +13,4 @@ class TaskInfo(Base):
     cron_expression = Column(String)
     device_id = Column(String)
     status = Column(String)
+    type = Column(String)          # CRON / MANUAL

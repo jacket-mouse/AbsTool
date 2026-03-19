@@ -22,6 +22,7 @@ class TaskService:
             cronExpression=task.cron_expression,
             deviceId=task.device_id,
             status=task.status,
+            type=task.type,
             creator=task.creator,
         )
 
@@ -43,6 +44,7 @@ class TaskService:
         task.cron_expression = request.cron_expression
         task.device_id = request.device_id
         task.status = "ENABLE"
+        task.type = request.type
         task.creator = user_id
         self.db.add(task)
         self.db.commit()
@@ -63,6 +65,8 @@ class TaskService:
             task.device_id = request.device_id
         if request.status is not None:
             task.status = request.status
+        if request.type is not None:
+            task.type = request.type
         self.db.commit()
         self.db.refresh(task)
         return self._to_dto(task)
