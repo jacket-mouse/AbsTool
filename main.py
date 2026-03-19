@@ -14,17 +14,7 @@ from ws_handlers.script_debug_ws import script_debug_ws_handler
 from ws_handlers.task_execute_ws import task_execute_ws_handler
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 启动时初始化定时任务调度器
-    from scheduler.task_scheduler import task_scheduler_manager
-    task_scheduler_manager.init_from_db()
-    yield
-    # 关闭时停止调度器
-    from scheduler.task_scheduler import task_scheduler_manager
-    task_scheduler_manager.shutdown()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 
 # 全局异常处理器

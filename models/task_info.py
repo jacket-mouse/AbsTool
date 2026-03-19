@@ -1,5 +1,5 @@
 from models.base import Base
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, String, ForeignKey
 
 
 class TaskInfo(Base):
@@ -8,12 +8,8 @@ class TaskInfo(Base):
 
     task_id = Column(String, primary_key=True)
     name = Column(String)
-    script_id = Column(String)
-    template_id = Column(String)
-    trigger_type = Column(String)
-    cron_expression = Column(String)
-    status = Column(String)
-    create_time = Column(DateTime)
-    start_time = Column(DateTime)
-    end_time = Column(DateTime)
+    template_id = Column(String, ForeignKey("script_template.template_id"))
     creator = Column(String)
+    cron_expression = Column(String)
+    device_id = Column(String)
+    status = Column(String)

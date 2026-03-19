@@ -26,6 +26,36 @@ class TemplateDto(BaseModel):
         populate_by_name = True
 
 
+class TemplateListDto(BaseModel):
+    """列表查询时返回的精简 DTO（不含 creator 和 scripts）"""
+    template_id: Optional[str] = Field(default=None, alias="templateId")
+    name: Optional[str] = None
+    description: Optional[str] = None
+    create_time: Optional[datetime] = Field(default=None, alias="createTime")
+
+    class Config:
+        populate_by_name = True
+
+
 class TemplateListResponse(BaseModel):
-    list: List[TemplateDto]
+    list: List[TemplateListDto]
     total: int
+
+
+class TemplateListRequest(BaseModel):
+    page: int = 1
+    size: int = 20
+    keyword: Optional[str] = None
+
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    scriptIds: List[str] = []
+
+
+class TemplateUpdateRequest(BaseModel):
+    templateId: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    scriptIds: Optional[List[str]] = None

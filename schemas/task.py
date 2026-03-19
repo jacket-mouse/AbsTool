@@ -1,6 +1,5 @@
 # schemas/task.py
 from __future__ import annotations
-from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
@@ -8,15 +7,11 @@ from pydantic import BaseModel, Field
 class TaskDto(BaseModel):
     task_id: Optional[str] = Field(default=None, alias="taskId")
     name: Optional[str] = None
-    script_id: Optional[str] = Field(default=None, alias="scriptId")
     template_id: Optional[str] = Field(default=None, alias="templateId")
-    trigger_type: Optional[str] = Field(default=None, alias="triggerType")
     cron_expression: Optional[str] = Field(default=None, alias="cronExpression")
+    device_id: Optional[str] = Field(default=None, alias="deviceId")
     status: Optional[str] = None
     creator: Optional[str] = None
-    create_time: Optional[datetime] = Field(default=None, alias="createTime")
-    start_time: Optional[datetime] = Field(default=None, alias="startTime")
-    end_time: Optional[datetime] = Field(default=None, alias="endTime")
 
     class Config:
         populate_by_name = True
@@ -36,11 +31,9 @@ class TaskListResponse(BaseModel):
 
 class TaskCreateRequest(BaseModel):
     name: str
-    script_id: Optional[str] = Field(default=None, alias="scriptId")
-    template_id: Optional[str] = Field(default=None, alias="templateId")
-    trigger_type: Optional[str] = Field(default=None, alias="triggerType")
-    cron_expression: Optional[str] = Field(default=None, alias="cronExpression")
-    creator: Optional[str] = None
+    template_id: str = Field(alias="templateId")
+    cron_expression: str = Field(alias="cronExpression")
+    device_id: str = Field(alias="deviceId")
 
     class Config:
         populate_by_name = True
@@ -49,10 +42,10 @@ class TaskCreateRequest(BaseModel):
 class TaskUpdateRequest(BaseModel):
     task_id: str = Field(alias="taskId")
     name: Optional[str] = None
-    script_id: Optional[str] = Field(default=None, alias="scriptId")
     template_id: Optional[str] = Field(default=None, alias="templateId")
-    trigger_type: Optional[str] = Field(default=None, alias="triggerType")
     cron_expression: Optional[str] = Field(default=None, alias="cronExpression")
+    device_id: Optional[str] = Field(default=None, alias="deviceId")
+    status: Optional[str] = None
 
     class Config:
         populate_by_name = True

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import relationship
 
 from models.base import Base
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, String, ForeignKey
 
 
 
@@ -12,7 +12,7 @@ class ScriptTemplate(Base):
     template_id = Column('template_id', String, primary_key=True)
     name = Column(String)
     description = Column(String)
-    creator = Column(String)
+    creator = Column(String, ForeignKey("sys_user.user_id"))
     create_time = Column("create_time", DateTime)
 
     relations = relationship("ScriptTemplateRel", backref="template", cascade="all, delete")

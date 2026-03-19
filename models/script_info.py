@@ -1,5 +1,5 @@
 from models.base import Base
-from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy import Column, DateTime, String, Text, ForeignKey
 
 class ScriptInfo(Base):
     """脚本信息 - script_info"""
@@ -10,6 +10,6 @@ class ScriptInfo(Base):
     type = Column(String)          # GENERAL / CUSTOM
     content = Column(Text)
     status = Column(String)        # ENABLED / DISABLED
-    creator = Column(String)
+    creator = Column(String, ForeignKey("sys_user.user_id"))
     create_time = Column(DateTime)
     latest_version = Column(String)

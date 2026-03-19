@@ -8,6 +8,7 @@ class ScriptTemplateRel(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     template_id = Column(String, ForeignKey('script_template.template_id'))
+    script_id = Column(String(255), ForeignKey('script_info.script_id'))
     is_default = Column(Integer)   # 1=是, 0=否
     sort_order = Column(Integer)
     create_time = Column(DateTime)
