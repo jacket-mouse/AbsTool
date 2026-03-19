@@ -156,7 +156,7 @@ async def execute_task(
         # ─── 所有脚本执行完毕（或被取消） ──────────────────────────────────
         end_time = datetime.now()
         if was_stopped:
-            exec_status = "STOPPED"
+            exec_status = "CANCELLED"
         elif has_error:
             exec_status = "FAILED"
         else:
