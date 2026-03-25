@@ -3,21 +3,36 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class AvdInfo(BaseModel):
-    """已安装的 AVD（Android Virtual Device）信息"""
-    name: str                                   # AVD 名称，如 "Pixel_7_API_34"
-    running: bool = False                       # 是否正在运行
-    serial: Optional[str] = None                # 运行中时对应的 serial，如 "emulator-5554"
+class EmulatorInfo(BaseModel):
+    """模拟器容器信息"""
+    container_id: str = Field(alias="containerId")          # Docker 容器 ID（短）
+    name: str                                                # 容器名称
+    android_version: str = Field(alias="androidVersion")     # Android 版本，如 "12.0"
+    status: str                                              # running / stopped / creating / pulling / booting
+    adb_serial: Optional[str] = Field(default=None, alias="adbSerial")  # ADB 连接地址，如 "127.0.0.1:5556"
+    adb_port: Optional[int] = Field(default=None, alias="adbPort")      # 映射的 ADB 端口
+
+    class Config:
+        populate_by_name = True
 
 
-class EmulatorStartRequest(BaseModel):
-    avd_name: str = Field(alias="avdName")      # 要启动的 AVD 名称
-    no_window: bool = Field(default=True, alias="noWindow")     # 是否无窗口模式
-    gpu: str = "auto"                           # GPU 模式: auto / host / swiftshader_indirect
+class EmulatorCreateRequest(BaseModel):
+    name: str                                                # 容器名称（用户自定义）
+    android_version: str = Field(default="12.0", alias="androidVersion")  # 可选 Android 版本
 
     class Config:
         populate_by_name = True
 
 
 class EmulatorStopRequest(BaseModel):
-    serial: str                                 # 要关闭的模拟器 serial，如 "emulator-5554"
+    container_id: str = Field(alias="containerId")
+
+    class Config:
+        populate_by_name = True
+
+
+class EmulatorDeleteRequest(BaseModel):
+    container_id: str = Field(alias="containerId")
+
+    class Config:
+        populate_by_name = True

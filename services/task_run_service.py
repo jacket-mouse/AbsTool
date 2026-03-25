@@ -12,7 +12,8 @@ from typing import Dict, Optional
 
 from services.minio_service import MinioFileService
 
-PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/.venv/bin/python3"
+import sys
+PYTHON_BIN = sys.executable
 
 # ─── 全局运行实例注册表 ─────────────────────────────────────────────────────
 _run_queues: Dict[str, asyncio.Queue] = {}        # run_id → SSE 日志队列

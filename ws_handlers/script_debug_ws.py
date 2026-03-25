@@ -8,7 +8,8 @@ import tempfile
 import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
 
-PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/.venv/bin/python3"
+import sys
+PYTHON_BIN = sys.executable
 python_gen = PythonScriptGenerator()
 
 
