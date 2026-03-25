@@ -49,6 +49,28 @@ class MinioFileService:
         )
         return file_name
 
+    def delete_prefix(self, prefix: str) -> int:
+        """删除指定前缀下的所有文件，返回删除数量"""
+        count = 0
+        try:
+            objects = self.client.list_objects(MINIO_BUCKET, prefix=prefix, recursive=True)
+            for obj in objects:
+                self.client.remove_object(MINIO_BUCKET, obj.object_name)
+                count += 1
+            logger.info(f"MinIO 已删除 {count} 个文件 (prefix={prefix})")
+        except Exception as e:
+            logger.error(f"MinIO delete_prefix failed [{prefix}]: {e}")
+        return count
+
+    def delete_file(self, file_name: str) -> bool:
+        """删除单个文件"""
+        try:
+            self.client.remove_object(MINIO_BUCKET, file_name)
+            return True
+        except Exception as e:
+            logger.error(f"MinIO delete_file failed [{file_name}]: {e}")
+            return False
+
     def get_file_content(self, file_name: str) -> str:
         try:
             response = self.client.get_object(MINIO_BUCKET, file_name)

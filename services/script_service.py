@@ -271,6 +271,8 @@ class ScriptService:
             self.db.commit()
 
             if rows > 0:
+                # 删除 MinIO 中该脚本的所有版本文件（scripts/{script_id}/）
+                self.minio.delete_prefix(f"scripts/{script_id}/")
                 return DeleteResponse(success=True, message="删除成功")
             return DeleteResponse(success=False, message="脚本不存在或已删除")
         except Exception as e:

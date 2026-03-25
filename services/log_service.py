@@ -80,6 +80,10 @@ class LogService:
         record = self.db.query(ScriptExecLog).filter(ScriptExecLog.log_id == log_id).first()
         if not record:
             return False
+        # 删除 MinIO 中的日志文件
+        if record.log_file_url:
+            minio = MinioFileService()
+            minio.delete_file(record.log_file_url)
         self.db.delete(record)
         self.db.commit()
         return True

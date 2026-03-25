@@ -47,13 +47,17 @@ async def list_devices():
                 model = part.removeprefix("model:").replace("_", " ")
                 break
 
-        label = f"{model}  [{serial}]" if model else serial
+        # 区分真机和模拟器
+        device_type = "emulator" if serial.startswith("emulator-") else "real"
+        type_label = "模拟器" if device_type == "emulator" else "真机"
+        label = f"{model} ({type_label}) [{serial}]" if model else f"({type_label}) [{serial}]"
 
         devices.append(DeviceInfo(
             serial=serial,
             state=state,
             model=model,
             label=label,
+            device_type=device_type,
         ))
 
     return devices

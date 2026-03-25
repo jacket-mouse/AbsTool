@@ -2,9 +2,10 @@ from pydantic import BaseModel
 
 class DeviceInfo(BaseModel):
     serial: str
-    state: str          # "device" | "offline" | "unauthorized"
+    state: str              # "device" | "offline" | "unauthorized"
     model: str = ""
-    label: str = ""     # 前端下拉框显示用
+    label: str = ""         # 前端下拉框显示用
+    device_type: str = ""   # "real" | "emulator"
 
 
 # 按键事件
