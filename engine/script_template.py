@@ -214,32 +214,18 @@ def handle_unlock(device, node):
 # 屏幕亮度
 def handle_brightness(device, node_data):
     props = node_data.get("properties", {})
-    brightness_raw = props.get("brightness", 50)
-
     try:
-        val = float(brightness_raw)
-        val = max(0.0, min(100.0, val))  # 限制在 0-100 之间
+        pct = int(float(props.get("brightness", 50)))
     except (ValueError, TypeError):
-        val = 50.0
-
-    # 计算不同安卓版本所需的亮度值格式
-    float_val = val / 100.0  # 用于较新系统的 0.0 - 1.0 格式
-    int_val = int(val * 255 / 100)  # 传统数据库 0 - 255 格式
-
-    try:
-        # 1. 强制关闭自动亮度 (如果不关，修改会在一秒后被传感器覆盖回去)
-        device.shell("settings put system screen_brightness_mode 0")
-        # 2. 写入传统整型配置 (修改系统设置数据库，绝大部分国产机型靠这个生效)
-        device.shell(f"settings put system screen_brightness {int_val}")
-        # 3. 写入新版浮点型配置 (修改 Android 11+ 的数据库)
-        device.shell(f"settings put system screen_brightness_float {float_val}")
-        # 🌟 修复 2：绝不能把 int_val (如 127) 传给 cmd display！
-        # 只用 float_val 去通知系统立刻刷新亮度，避免触发 >1.0 拉满的 Bug
-        device.shell(f"cmd display set-brightness {float_val}")
-
-    except Exception as e:
-        # 亮度调节不应该阻断主流程，使用软隔离
-        print(json.dumps({"type": "log", "message": f"⚠️ 屏幕亮度调节部分受限: {e}"}, ensure_ascii=False), flush=True)
+        pct = 50
+    # 限制在 0-100 之间
+    pct = max(0, min(100, pct))
+    # 关闭自动亮度，切换为手动模式
+    device.shell(["settings", "put", "system", "screen_brightness_mode", "0"])
+    # 使用 cmd display set-brightness 直接操作 DisplayManager，即时生效
+    brightness_float = pct / 100.0
+    device.shell(f"cmd display set-brightness {brightness_float:.2f}")
+    print(json.dumps({"type": "log", "message": f"屏幕亮度已设置为 {pct}%"}, ensure_ascii=False), flush=True)
 
 # 模拟通知
 def handle_notification(device, node):

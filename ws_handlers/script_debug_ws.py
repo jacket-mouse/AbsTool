@@ -6,7 +6,7 @@ import os
 import json
 import tempfile
 import asyncio
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import WebSocket, WebSocketDisconnect
 
 PYTHON_BIN = "/Users/leeson/Documents/毕业设计/AbsTool/.venv/bin/python3"
 python_gen = PythonScriptGenerator()
@@ -39,7 +39,7 @@ async def script_debug_ws_handler(websocket: WebSocket):
                 pass
         tmp_path = None
 
-    # 2. 🌟 核心修复：流读取器（支持并发读取 stdout 和 stderr）
+    # 2. 流读取器（支持并发读取 stdout 和 stderr）
     async def read_stream(stream: asyncio.StreamReader, is_stderr=False):
         if not stream:
             return
@@ -86,7 +86,7 @@ async def script_debug_ws_handler(websocket: WebSocket):
                 config_data = msg.get("config", {})
                 nodes = [ScriptNode(**n) if isinstance(n, dict) else n for n in config_data.get("nodes", [])]
 
-                # 🌟 核心修复：精准映射前端的连线字段到后端的 Pydantic 模型
+                # 精准映射前端的连线字段到后端的 Pydantic 模型
                 conns = []
                 for c in config_data.get("connections", []):
                     if isinstance(c, dict):
@@ -116,7 +116,7 @@ async def script_debug_ws_handler(websocket: WebSocket):
                     stderr=asyncio.subprocess.PIPE,
                 )
 
-                # 🌟 核心修复：用 asyncio.create_task 并发读取！彻底解决死锁！
+                # 用 asyncio.create_task 并发读取！彻底解决死锁！
                 asyncio.create_task(read_stream(process.stdout, is_stderr=False))
                 asyncio.create_task(read_stream(process.stderr, is_stderr=True))
                 # 派一个守望者去等它结束
@@ -144,10 +144,25 @@ async def script_debug_ws_handler(websocket: WebSocket):
     except ValueError as ve:
         error_msg = str(ve)
         print(f"⚠️ 脚本逻辑校验未通过，拒绝调试: {error_msg}")
-        # 向前端抛出 400 Bad Request，告诉用户是他画的图有问题
-        raise HTTPException(status_code=400, detail=error_msg)
+        # 通过 WebSocket 发送错误消息，再优雅关闭连接
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": error_msg
+            }, ensure_ascii=False))
+            await websocket.close(code=1008, reason=error_msg[:123])
+        except Exception:
+            pass
     except Exception as e:
         print(f"[ScriptDebug] 发生致命错误: {e}")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"服务器内部错误: {str(e)}"
+            }, ensure_ascii=False))
+            await websocket.close(code=1011, reason="Internal Error")
+        except Exception:
+            pass
     finally:
         await terminate()
         print(f"[ScriptDebug] WebSocket disconnected")

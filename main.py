@@ -12,7 +12,6 @@ from routers import auth_router, script_router, script_editor_router, task_route
     stream_router, device_router
 from routers import log_router
 from ws_handlers.script_debug_ws import script_debug_ws_handler
-from ws_handlers.task_execute_ws import task_execute_ws_handler
 
 
 app = FastAPI()
@@ -64,12 +63,6 @@ app.include_router(log_router.router)
 @app.websocket("/api/ws/script/debug")
 async def ws_script_debug(websocket: WebSocket):
     await script_debug_ws_handler(websocket)
-
-
-@app.websocket("/api/ws/task/execute")
-async def ws_task_execute(websocket: WebSocket):
-    await task_execute_ws_handler(websocket)
-
 
 if __name__ == "__main__":
     import uvicorn

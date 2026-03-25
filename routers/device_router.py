@@ -1,5 +1,4 @@
 import subprocess
-from urllib.request import Request
 import uiautomator2 as u2
 import base64
 import io
