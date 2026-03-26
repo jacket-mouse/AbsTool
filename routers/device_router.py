@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/device", tags=["device"])
 async def list_devices():
     try:
         result = subprocess.run(
-            ["adb", "devices", "-l"],
+            [adbutils.adb_path(), "devices", "-l"],
             capture_output=True,
             text=True,
             timeout=10

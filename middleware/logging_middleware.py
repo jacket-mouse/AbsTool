@@ -1,33 +1,48 @@
 import time
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 from loguru import logger
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # 排除对 WebSocket 和一些无关紧要的静态文件的拦截（按需保留）
-        if request.url.path.startswith("/api/ws/"):
-            return await call_next(request)
+
+class LoggingMiddleware:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # 排除 WebSocket 相关路径
+        path = scope.get("path", "")
+        if path.startswith("/api/ws/"):
+            await self.app(scope, receive, send)
+            return
+
+        # 获取客户端 IP
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
+        method = scope.get("method", "UNKNOWN")
 
         start_time = time.time()
-        client_ip = request.client.host if request.client else "unknown"
-        
-        # 1. 在接口执行前，输出 Request 信息
-        logger.info(f"==> Request: {request.method} {request.url.path} ({client_ip})")
-        
+        logger.info(f"==> Request: {method} {path} ({client_ip})")
+
+        status_code = None
+
+        async def send_wrapper(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_wrapper)
             process_time = time.time() - start_time
-            
-            # 2. 在接口执行后返回前，输出 Response 摘要信息
-            # 如果成功，用 success，否则用 warning
-            if 200 <= response.status_code < 400:
-                logger.success(f"<== Response: {request.method} {request.url.path} | Status: {response.status_code} | {process_time:.3f}s")
-            else:
-                logger.warning(f"<== Response: {request.method} {request.url.path} | Status: {response.status_code} | {process_time:.3f}s")
-                
-            return response
+            if status_code is not None:
+                if 200 <= status_code < 400:
+                    logger.success(f"<== Response: {method} {path} | Status: {status_code} | {process_time:.3f}s")
+                else:
+                    logger.warning(f"<== Response: {method} {path} | Status: {status_code} | {process_time:.3f}s")
         except Exception as e:
             process_time = time.time() - start_time
-            logger.error(f"<== Response Error: {request.method} {request.url.path} | {process_time:.3f}s")
+            logger.error(f"<== Response Error: {method} {path} | {process_time:.3f}s")
             raise e

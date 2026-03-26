@@ -5,7 +5,9 @@
 import asyncio
 import json
 import os
+import subprocess
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from typing import Dict, Optional
@@ -17,7 +19,7 @@ PYTHON_BIN = sys.executable
 
 # ─── 全局运行实例注册表 ─────────────────────────────────────────────────────
 _run_queues: Dict[str, asyncio.Queue] = {}        # run_id → SSE 日志队列
-_run_processes: Dict[str, asyncio.subprocess.Process] = {}  # run_id → 当前子进程
+_run_processes: Dict[str, subprocess.Popen] = {}  # run_id → 当前子进程
 _run_cancelled: Dict[str, bool] = {}              # run_id → 是否已被取消
 
 
@@ -34,7 +36,7 @@ def stop_run(run_id: str) -> bool:
     _run_cancelled[run_id] = True
     # 杀掉当前正在运行的子进程
     proc = _run_processes.get(run_id)
-    if proc and proc.returncode is None:
+    if proc and proc.poll() is None:
         try:
             proc.kill()
         except Exception:
@@ -100,39 +102,71 @@ async def execute_task(
                     tmp_file = f.name
 
                 # 3. 启动子进程执行（-u 禁用缓冲，保证实时输出）
-                process = await asyncio.create_subprocess_exec(
-                    PYTHON_BIN, "-u", tmp_file,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"
+                process = subprocess.Popen(
+                    [PYTHON_BIN, "-u", tmp_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
                 )
                 _run_processes[run_id] = process
+                loop = asyncio.get_event_loop()
 
-                # 并发读取 stdout 和 stderr
-                async def read_stdout():
-                    async for line in process.stdout:
-                        text = line.decode("utf-8", errors="replace").rstrip()
-                        if text:
-                            try:
-                                node = json.loads(text)
-                                if isinstance(node, dict) and node.get("type") == "log":
-                                    status = node.get("status", "success")
-                                    msg = node.get("message", text)
-                                    await push(status, msg)
-                                else:
-                                    await push("info", text)
-                            except json.JSONDecodeError:
-                                await push("info", text)
+                # 在后台线程中同步读取 stdout/stderr，通过 event loop 回调推送日志
+                stdout_done = threading.Event()
+                stderr_done = threading.Event()
 
-                async def read_stderr():
+                def read_stdout_sync():
+                    try:
+                        for line in process.stdout:
+                            text = line.decode("utf-8", errors="replace").rstrip()
+                            if text:
+                                try:
+                                    node = json.loads(text)
+                                    if isinstance(node, dict) and node.get("type") == "log":
+                                        status = node.get("status", "success")
+                                        msg = node.get("message", text)
+                                        f = asyncio.run_coroutine_threadsafe(push(status, msg), loop)
+                                    else:
+                                        f = asyncio.run_coroutine_threadsafe(push("info", text), loop)
+                                except json.JSONDecodeError:
+                                    f = asyncio.run_coroutine_threadsafe(push("info", text), loop)
+                                try:
+                                    f.result(timeout=10)
+                                except Exception:
+                                    break
+                    except Exception:
+                        pass
+                    finally:
+                        stdout_done.set()
+
+                def read_stderr_sync():
                     nonlocal has_error
-                    async for line in process.stderr:
-                        text = line.decode("utf-8", errors="replace").rstrip()
-                        if text:
-                            has_error = True
-                            await push("error", f"[stderr] {text}")
+                    try:
+                        for line in process.stderr:
+                            text = line.decode("utf-8", errors="replace").rstrip()
+                            if text:
+                                has_error = True
+                                f = asyncio.run_coroutine_threadsafe(push("error", f"[stderr] {text}"), loop)
+                                try:
+                                    f.result(timeout=10)
+                                except Exception:
+                                    break
+                    except Exception:
+                        pass
+                    finally:
+                        stderr_done.set()
 
-                await asyncio.gather(read_stdout(), read_stderr())
-                await process.wait()
+                threading.Thread(target=read_stdout_sync, daemon=True).start()
+                threading.Thread(target=read_stderr_sync, daemon=True).start()
+
+                # 在线程中等待进程结束，避免阻塞事件循环
+                await asyncio.to_thread(process.wait)
+
+                # 等待读取线程完成（确保所有日志都已推送）
+                await asyncio.to_thread(stdout_done.wait, 5)
+                await asyncio.to_thread(stderr_done.wait, 5)
 
                 # 进程结束后清除引用
                 _run_processes.pop(run_id, None)

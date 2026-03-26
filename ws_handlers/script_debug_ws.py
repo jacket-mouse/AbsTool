@@ -4,8 +4,10 @@ from schemas.script_editor import ScriptConfig, ScriptNode, Connection
 
 import os
 import json
+import subprocess
 import tempfile
 import asyncio
+import threading
 from fastapi import WebSocket, WebSocketDisconnect
 
 import sys
@@ -17,17 +19,17 @@ async def script_debug_ws_handler(websocket: WebSocket):
     await websocket.accept()
     print(f"[ScriptDebug] WebSocket connected")
 
-    process: asyncio.subprocess.Process | None = None
+    process: subprocess.Popen | None = None
     tmp_path: str | None = None
+    loop = asyncio.get_event_loop()
 
     # 1. 安全终止与清理机制
     async def terminate():
         nonlocal process, tmp_path
-        if process and process.returncode is None:
+        if process and process.poll() is None:
             try:
                 process.kill()
-                # 给它 1 秒钟优雅死掉，否则强制回收
-                await asyncio.wait_for(process.wait(), timeout=1.0)
+                await asyncio.to_thread(process.wait, timeout=1.0)
             except Exception:
                 pass
         process = None
@@ -40,39 +42,45 @@ async def script_debug_ws_handler(websocket: WebSocket):
                 pass
         tmp_path = None
 
-    # 2. 流读取器（支持并发读取 stdout 和 stderr）
-    async def read_stream(stream: asyncio.StreamReader, is_stderr=False):
-        if not stream:
-            return
+    # 2. 流读取器：在线程中同步读取 pipe，通过 event loop 回调发送 WebSocket 消息
+    def _read_stream_sync(stream, is_stderr, ws_send_coro_factory):
+        """在后台线程中同步逐行读取子进程的 stdout/stderr"""
         try:
-            async for line in stream:
+            for line in stream:
                 text = line.decode("utf-8", errors="replace").strip()
                 if not text:
                     continue
                 try:
                     if is_stderr:
-                        # Stderr 统一包装成红色的报错日志发送给前端
-                        await websocket.send_text(json.dumps({
+                        data = json.dumps({
                             "type": "log",
                             "status": "error",
                             "message": f"[系统报错] {text}"
-                        }, ensure_ascii=False))
+                        }, ensure_ascii=False)
                     else:
-                        # Stdout 直接透传（因为底层脚本已经把它 print 成了标准 JSON 格式）
-                        await websocket.send_text(text)
+                        data = text
+                    # 从后台线程安全地调度到 event loop
+                    future = asyncio.run_coroutine_threadsafe(
+                        websocket.send_text(data), loop
+                    )
+                    future.result(timeout=5)  # 等待发送完成
                 except Exception:
-                    break  # WebSocket 断开时停止推送
+                    break
         except Exception:
             pass
 
-    # 3. 进程守望者（等待结束并发送 finished 帧）
-    async def wait_and_finish(p: asyncio.subprocess.Process):
-        await p.wait()
+    # 3. 进程守望者：在线程中等待进程结束
+    def _wait_process_sync(p):
+        p.wait()
         try:
-            await websocket.send_text(json.dumps({"type": "finished"}))
+            future = asyncio.run_coroutine_threadsafe(
+                websocket.send_text(json.dumps({"type": "finished"})), loop
+            )
+            future.result(timeout=5)
         except Exception:
             pass
-        await terminate()  # 执行完毕后自动擦屁股（删临时文件）
+        # 触发清理
+        asyncio.run_coroutine_threadsafe(terminate(), loop)
 
     try:
         while True:
@@ -94,7 +102,7 @@ async def script_debug_ws_handler(websocket: WebSocket):
                         conns.append(Connection(
                             from_node=c.get("from", c.get("from_node", "")),
                             to_node=c.get("to", c.get("to_node", "")),
-                            from_port=c.get("fromPort", c.get("from_port", "default")),  # 默认端口给 default
+                            from_port=c.get("fromPort", c.get("from_port", "default")),
                             to_port=c.get("toPort", c.get("to_port", "default"))
                         ))
                     else:
@@ -109,19 +117,34 @@ async def script_debug_ws_handler(websocket: WebSocket):
                     f.write(python_code)
                     tmp_path = f.name
 
-                # --- 启动进程 (-u 参数极其关键，禁用 Python 输出缓冲，保证日志实时到达) ---
-                process = await asyncio.create_subprocess_exec(
-                    PYTHON_BIN, "-u", tmp_path,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                # --- 用 subprocess.Popen 启动进程（兼容 Windows 所有事件循环） ---
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"
+                process = subprocess.Popen(
+                    [PYTHON_BIN, "-u", tmp_path],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
                 )
 
-                # 用 asyncio.create_task 并发读取！彻底解决死锁！
-                asyncio.create_task(read_stream(process.stdout, is_stderr=False))
-                asyncio.create_task(read_stream(process.stderr, is_stderr=True))
-                # 派一个守望者去等它结束
-                asyncio.create_task(wait_and_finish(process))
+                # 用后台线程并发读取 stdout/stderr，避免死锁
+                threading.Thread(
+                    target=_read_stream_sync,
+                    args=(process.stdout, False, None),
+                    daemon=True
+                ).start()
+                threading.Thread(
+                    target=_read_stream_sync,
+                    args=(process.stderr, True, None),
+                    daemon=True
+                ).start()
+                # 守望者线程等待进程结束
+                threading.Thread(
+                    target=_wait_process_sync,
+                    args=(process,),
+                    daemon=True
+                ).start()
 
             elif action == "stop":
                 await terminate()
@@ -132,11 +155,10 @@ async def script_debug_ws_handler(websocket: WebSocket):
 
             # 包括 step, run, pause, 还有前面加的 overrideCode 都在这里统一透传
             elif action in ("step", "run", "pause", "keyevent"):
-                if process and process.stdin and process.returncode is None:
+                if process and process.stdin and process.poll() is None:
                     try:
-                        # 将前端的 JSON 指令原封不动地砸进 Python 子脚本的黑洞 (stdin)
                         process.stdin.write((raw + "\n").encode("utf-8"))
-                        await process.stdin.drain()
+                        process.stdin.flush()
                     except Exception as e:
                         print(f"写入子进程 stdin 失败: {e}")
 
@@ -145,7 +167,6 @@ async def script_debug_ws_handler(websocket: WebSocket):
     except ValueError as ve:
         error_msg = str(ve)
         print(f"⚠️ 脚本逻辑校验未通过，拒绝调试: {error_msg}")
-        # 通过 WebSocket 发送错误消息，再优雅关闭连接
         try:
             await websocket.send_text(json.dumps({
                 "type": "error",
@@ -155,7 +176,9 @@ async def script_debug_ws_handler(websocket: WebSocket):
         except Exception:
             pass
     except Exception as e:
-        print(f"[ScriptDebug] 发生致命错误: {e}")
+        import traceback
+        print(f"[ScriptDebug] 发生致命错误: {type(e).__name__}: {e}")
+        traceback.print_exc()
         try:
             await websocket.send_text(json.dumps({
                 "type": "error",

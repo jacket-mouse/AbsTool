@@ -15,8 +15,21 @@ async def device_stream(websocket: WebSocket):
     logger.info(f"正在推流设备: serial {serial}")
     device = adb.device(serial)
 
-    server = ScrcpyServer(device, version="2.7")
+    server = None
     try:
+        server = ScrcpyServer(device, version="2.7")
         await server.handle_unified_websocket(websocket)
+    except Exception as e:
+        logger.error(f"设备连接失败: {str(e)}")
+        error_msg = str(e)
+        if "unauthorized" in error_msg.lower():
+            error_msg = "设备未授权 USB 调试，请在手机屏幕上点击「允许」后再试。"
+        try:
+            import json
+            await websocket.send_text(json.dumps({"type": "error", "message": error_msg}))
+            await websocket.close(1011, error_msg[:100])
+        except Exception:
+            pass
     finally:
-        server.close()
+        if server:
+            server.close()
