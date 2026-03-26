@@ -6,7 +6,7 @@ python-jose
 passlib
 python-dotenv
 uvicorn
-bcrypt
+bcrypt==3.2.0
 cryptography
 contextvars
 minio
