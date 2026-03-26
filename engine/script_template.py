@@ -442,7 +442,7 @@ ACTION_DISPATCHER = {
 def run_script():
     global is_debug_mode, debug_lock, engine_running
     # 设备连接 输出信息至 stdout
-    _serial = _DEVICE_SERIAL_ or None
+    _serial = os.environ.get("DEVICE_SERIAL", "") or _DEVICE_SERIAL_ or None
     print(json.dumps({"type": "log", "message": f"正在连接设备...{('(指定: ' + _serial + ')') if _serial else ''}"}, ensure_ascii=False), flush=True)
     try:
         device = u2.connect(_serial) if _serial else u2.connect()

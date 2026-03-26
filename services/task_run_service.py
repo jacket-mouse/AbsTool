@@ -5,6 +5,7 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -94,7 +95,17 @@ async def execute_task(
                 has_error = True
                 continue
 
-            # 2. 写入临时文件
+            # 2. 运行时注入设备序列号（覆盖脚本中生成时写死的空串）
+            if device_id and device_id != "local":
+                py_content = re.sub(
+                    r'^(_DEVICE_SERIAL_\s*=\s*)(""|\'\')',
+                    rf'\1"{device_id}"',
+                    py_content,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+
+            # 3. 写入临时文件
             tmp_file = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
@@ -104,6 +115,9 @@ async def execute_task(
                 # 3. 启动子进程执行（-u 禁用缓冲，保证实时输出）
                 env = os.environ.copy()
                 env["PYTHONIOENCODING"] = "utf-8"
+                # 将设备序列号通过环境变量传递给脚本，解决多设备时连接失败的问题
+                if device_id and device_id != "local":
+                    env["DEVICE_SERIAL"] = device_id
                 process = subprocess.Popen(
                     [PYTHON_BIN, "-u", tmp_file],
                     stdout=subprocess.PIPE,

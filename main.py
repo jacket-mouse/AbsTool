@@ -71,10 +71,12 @@ async def ws_script_debug(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     # 配置 reload_excludes 排除特定文件或文件夹触发重启
+    # 使用 watchfiles 重载器 + asyncio 事件循环，避免 Windows 下 WinError 10038
     uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=8080, 
+        "main:app",
+        host="0.0.0.0",
+        port=8080,
         reload=True,
-        reload_excludes=["engine/script_template.py", "*.log"]
+        reload_excludes=["engine/script_template.py", "*.log"],
+        loop="asyncio",
     )
