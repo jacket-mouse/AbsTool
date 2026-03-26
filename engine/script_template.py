@@ -24,6 +24,7 @@ false = False
 _FLOW_GRAPH_ = {} # __FLOW_GRAPH__
 _START_NODE_ID_ = ""  # __START_NODE__
 _IS_DEBUG_MODE_ = True  # __IS_DEBUG__
+_DEVICE_SERIAL_ = ""  # __DEVICE_SERIAL__
 debug_lock = threading.Event()
 engine_running = True
 runtime_state = {}
@@ -441,9 +442,10 @@ ACTION_DISPATCHER = {
 def run_script():
     global is_debug_mode, debug_lock, engine_running
     # 设备连接 输出信息至 stdout
-    print(json.dumps({"type": "log", "message": "正在连接设备..."}, ensure_ascii=False), flush=True)
+    _serial = _DEVICE_SERIAL_ or None
+    print(json.dumps({"type": "log", "message": f"正在连接设备...{('(指定: ' + _serial + ')') if _serial else ''}"}, ensure_ascii=False), flush=True)
     try:
-        device = u2.connect()
+        device = u2.connect(_serial) if _serial else u2.connect()
         print(json.dumps({"type": "init", "status": "success", "serial": device.serial}, ensure_ascii=False), flush=True)
     except Exception as e:
         print(json.dumps({"type": "init", "status": "error", "error": str(e)}, ensure_ascii=False), flush=True)

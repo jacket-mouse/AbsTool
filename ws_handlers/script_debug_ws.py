@@ -110,8 +110,11 @@ async def script_debug_ws_handler(websocket: WebSocket):
 
                 config = ScriptConfig(nodes=nodes, connections=conns)
 
+                # --- 提取设备序列号 ---
+                serial = msg.get("serial", "") or ""
+
                 # --- 生成脚本并写入临时文件 ---
-                python_code = python_gen.generate_debug(config)
+                python_code = python_gen.generate_debug(config, serial=serial)
 
                 with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
                     f.write(python_code)

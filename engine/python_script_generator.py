@@ -18,18 +18,19 @@ TEMPLATE_PATH = Path(__file__).parent / "script_template.py"
 MARKER_FLOW_GRAPH = "# __FLOW_GRAPH__"
 MARKER_START_NODE = "# __START_NODE__"
 MARKER_IS_DEBUG   = "# __IS_DEBUG__"
+MARKER_DEVICE_SERIAL = "# __DEVICE_SERIAL__"
 
 
 class PythonScriptGenerator:
 
-    def generate(self, config: ScriptConfig) -> str:
-        return self._generate_internal(config, is_debug=False)
+    def generate(self, config: ScriptConfig, serial: str = "") -> str:
+        return self._generate_internal(config, is_debug=False, serial=serial)
 
-    def generate_debug(self, config: ScriptConfig) -> str:
-        return self._generate_internal(config, is_debug=True)
+    def generate_debug(self, config: ScriptConfig, serial: str = "") -> str:
+        return self._generate_internal(config, is_debug=True, serial=serial)
 
 
-    def _generate_internal(self, config: ScriptConfig, is_debug: bool) -> str:
+    def _generate_internal(self, config: ScriptConfig, is_debug: bool, serial: str = "") -> str:
         # 1. 拿到拍平后的图结构和起点
         instructions, start_node_id = self._compile_flow_graph(config)
 
@@ -45,6 +46,7 @@ class PythonScriptGenerator:
         # 2. 补上刚才漏掉的 instructions 变量
         flow_graph_json = json.dumps(instructions, ensure_ascii=False)
         debug_flag = "True" if is_debug else "False"
+        serial_str = serial or ""
 
         # 3. 读取原始模板文件（只读操作，极其安全）
         lines = TEMPLATE_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -58,6 +60,8 @@ class PythonScriptGenerator:
                 new_lines.append(f'_START_NODE_ID_ = "{start_node_id}"  {MARKER_START_NODE}\n')
             elif MARKER_IS_DEBUG in line:
                 new_lines.append(f"_IS_DEBUG_MODE_ = {debug_flag}  {MARKER_IS_DEBUG}\n")
+            elif MARKER_DEVICE_SERIAL in line:
+                new_lines.append(f'_DEVICE_SERIAL_ = "{serial_str}"  {MARKER_DEVICE_SERIAL}\n')
             else:
                 new_lines.append(line)
 
