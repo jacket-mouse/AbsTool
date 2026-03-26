@@ -1,9 +1,14 @@
 # routers/stream_router.py
+import json
+
 from fastapi import APIRouter, WebSocket
+from starlette.websockets import WebSocketDisconnect
 from adbutils import adb
 from remote.scrcpy import ScrcpyServer
 from loguru import logger
+
 router = APIRouter()
+
 
 @router.websocket("/api/ws/device/stream")
 async def device_stream(websocket: WebSocket):
@@ -13,23 +18,26 @@ async def device_stream(websocket: WebSocket):
     # 获取设备
     serial = websocket.query_params.get("serial")
     logger.info(f"正在推流设备: serial {serial}")
-    device = adb.device(serial)
 
     server = None
     try:
+        device = adb.device(serial)
         server = ScrcpyServer(device, version="2.7")
         await server.handle_unified_websocket(websocket)
+    except WebSocketDisconnect:
+        logger.info(f"推流 WebSocket 正常断开: serial={serial}")
     except Exception as e:
-        logger.error(f"设备连接失败: {str(e)}")
-        error_msg = str(e)
-        if "unauthorized" in error_msg.lower():
-            error_msg = "设备未授权 USB 调试，请在手机屏幕上点击「允许」后再试。"
+        logger.error(f"推流异常: {e}")
         try:
-            import json
-            await websocket.send_text(json.dumps({"type": "error", "message": error_msg}))
-            await websocket.close(1011, error_msg[:100])
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            await websocket.close(1011, str(e)[:100])
         except Exception:
             pass
     finally:
         if server:
             server.close()
+        # 确保 WebSocket 关闭，避免遗留连接
+        try:
+            await websocket.close()
+        except Exception:
+            pass

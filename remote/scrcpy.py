@@ -14,6 +14,7 @@ from adbutils._device import AdbDevice
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from uiautodev.remote.touch_controller import ScrcpyTouchController
+from remote.android_input import KeyeventAction, MetaState
 
 
 
@@ -139,10 +140,24 @@ class ScrcpyServer:
         control_task = asyncio.create_task(self._handle_control_websocket(websocket))
 
         try:
-            # 不使用 return_exceptions=True，让异常能够正确传播
-            await asyncio.gather(video_task, control_task)
+            done, pending = await asyncio.wait(
+                [video_task, control_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            # 某一端结束后，取消另一端
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            # 检查已完成的任务是否有异常需要记录
+            for task in done:
+                if task.exception() and not isinstance(task.exception(), (WebSocketDisconnect, asyncio.CancelledError)):
+                    logger.warning(f"[Unified] Task ended with error: {task.exception()}")
+        except Exception as e:
+            logger.warning(f"[Unified] handle_unified_websocket exception: {e}")
         finally:
-            # 取消任务
             for task in (video_task, control_task):
                 if not task.done():
                     task.cancel()
@@ -151,49 +166,76 @@ class ScrcpyServer:
     async def _stream_video_to_websocket(self, conn: socket.socket, ws: WebSocket):
         # Set socket to non-blocking mode
         conn.setblocking(False)
+        loop = asyncio.get_event_loop()
 
-        while True:
-            # check if ws closed
-            if ws.client_state.name != "CONNECTED":
-                logger.info('WebSocket no longer connected. Exiting video stream.')
-                break
-            # Use asyncio to read data asynchronously
-            data = await asyncio.get_event_loop().sock_recv(conn, 1024 * 1024)
-            if not data:
-                logger.warning('No data received, connection may be closed.')
-                raise ConnectionError("Video stream ended unexpectedly")
-            # send data to ws
-            await ws.send_bytes(data)
+        try:
+            while True:
+                # check if ws closed
+                if ws.client_state.name != "CONNECTED":
+                    logger.info('WebSocket no longer connected. Exiting video stream.')
+                    break
+                try:
+                    data = await loop.sock_recv(conn, 1024 * 1024)
+                except (OSError, ConnectionError) as e:
+                    logger.info(f'Video socket closed: {e}')
+                    break
+                if not data:
+                    logger.warning('No data received, connection may be closed.')
+                    break
+                try:
+                    await ws.send_bytes(data)
+                except (WebSocketDisconnect, RuntimeError, OSError):
+                    logger.info('WebSocket disconnected during video send.')
+                    break
+        except asyncio.CancelledError:
+            pass
 
     async def _handle_control_websocket(self, ws: WebSocket):
-        while True:
-            try:
-                message = await ws.receive_text()
-                logger.debug(f"[Unified] Received message: {message}")
-                message = json.loads(message)
+        try:
+            while True:
+                try:
+                    message = await ws.receive_text()
+                except (WebSocketDisconnect, RuntimeError, OSError):
+                    logger.info('Control WebSocket disconnected.')
+                    break
 
-                width, height = self.resolution_width, self.resolution_height
-                message_type = message.get('type')
-                if message_type == 'touchMove':
-                    xP = message['xP']
-                    yP = message['yP']
-                    self.controller.move(int(xP * width), int(yP * height), width, height)
-                elif message_type == 'touchDown':
-                    xP = message['xP']
-                    yP = message['yP']
-                    self.controller.down(int(xP * width), int(yP * height), width, height)
-                elif message_type == 'touchUp':
-                    xP = message['xP']
-                    yP = message['yP']
-                    self.controller.up(int(xP * width), int(yP * height), width, height)
-                elif message_type == 'keyEvent':
-                    event_number = message['data']['eventNumber']
-                    self.device.shell(f'input keyevent {event_number}')
-                elif message_type == 'text':
-                    text = message['detail']
-                    self.device.shell(f'am broadcast -a SONIC_KEYBOARD --es msg \'{text}\'')
-                elif message_type == 'ping':
-                    await ws.send_text(json.dumps({"type": "pong"}))
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON message: {e}")
-                continue
+                try:
+                    logger.debug(f"[Unified] Received message: {message}")
+                    message = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON message: {e}")
+                    continue
+
+                try:
+                    width, height = self.resolution_width, self.resolution_height
+                    message_type = message.get('type')
+                    if message_type == 'touchMove':
+                        xP = message['xP']
+                        yP = message['yP']
+                        self.controller.move(int(xP * width), int(yP * height), width, height)
+                    elif message_type == 'touchDown':
+                        xP = message['xP']
+                        yP = message['yP']
+                        self.controller.down(int(xP * width), int(yP * height), width, height)
+                    elif message_type == 'touchUp':
+                        xP = message['xP']
+                        yP = message['yP']
+                        self.controller.up(int(xP * width), int(yP * height), width, height)
+                    elif message_type == 'keyEvent':
+                        event_number = message['data']['eventNumber']
+                        # 通过 scrcpy 控制协议发送按键（兼容雷电等模拟器）
+                        self.controller.key(KeyeventAction.DOWN, event_number, 0, MetaState.NONE)
+                        self.controller.key(KeyeventAction.UP, event_number, 0, MetaState.NONE)
+                    elif message_type == 'text':
+                        text = message['detail']
+                        self.device.shell(f'am broadcast -a SONIC_KEYBOARD --es msg \'{text}\'')
+                    elif message_type == 'ping':
+                        await ws.send_text(json.dumps({"type": "pong"}))
+                except (OSError, BrokenPipeError) as e:
+                    logger.warning(f"Control socket error: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"Unexpected error handling control message: {e}")
+                    continue
+        except asyncio.CancelledError:
+            pass
