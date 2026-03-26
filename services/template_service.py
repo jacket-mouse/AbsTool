@@ -9,6 +9,7 @@ from sqlalchemy import asc, desc
 from models.script_template import ScriptTemplate
 from models.script_template_rel import ScriptTemplateRel
 from schemas.template import TemplateDto, TemplateScriptDto, TemplateListDto, TemplateListResponse
+from core.user_context import get_current_user_id
 
 
 class TemplateService:
@@ -51,6 +52,10 @@ class TemplateService:
 
     def list_templates(self, page: int, size: int, keyword: Optional[str] = None) -> TemplateListResponse:
         query = self.db.query(ScriptTemplate)
+        # 按当前登录用户过滤
+        user_id = get_current_user_id()
+        if user_id:
+            query = query.filter(ScriptTemplate.creator == user_id)
         if keyword:
             query = query.filter(ScriptTemplate.name.like(f"%{keyword}%"))
         query = query.order_by(desc(ScriptTemplate.create_time))

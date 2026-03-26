@@ -7,6 +7,7 @@ from sqlalchemy import desc
 
 from models.task_info import TaskInfo
 from schemas.task import TaskDto, TaskListRequest, TaskListResponse, TaskCreateRequest, TaskUpdateRequest
+from core.user_context import get_current_user_id
 
 
 class TaskService:
@@ -28,6 +29,10 @@ class TaskService:
 
     def get_task_list(self, request: TaskListRequest) -> TaskListResponse:
         query = self.db.query(TaskInfo)
+        # 按当前登录用户过滤
+        user_id = get_current_user_id()
+        if user_id:
+            query = query.filter(TaskInfo.creator == user_id)
         if request.keyword:
             query = query.filter(TaskInfo.name.like(f"%{request.keyword}%"))
         if request.status:

@@ -6,8 +6,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.script_execlog import ScriptExecLog
+from models.task_info import TaskInfo
 from schemas.log import LogDto, LogListRequest, LogListResponse
 from services.minio_service import MinioFileService
+from core.user_context import get_current_user_id
 
 
 class LogService:
@@ -17,6 +19,15 @@ class LogService:
 
     def get_log_list(self, request: LogListRequest) -> LogListResponse:
         query = self.db.query(ScriptExecLog)
+
+        # 按当前登录用户过滤（日志表无 creator 字段，通过 task_id 关联 task_info 过滤）
+        user_id = get_current_user_id()
+        if user_id:
+            user_task_ids = [
+                t.task_id for t in
+                self.db.query(TaskInfo.task_id).filter(TaskInfo.creator == user_id).all()
+            ]
+            query = query.filter(ScriptExecLog.task_id.in_(user_task_ids))
 
         # 关键字模糊搜索 taskId / deviceId
         if request.keyword:
