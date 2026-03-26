@@ -77,11 +77,23 @@ class ScrcpyServer:
         logger.debug(f'Resolution: {self.resolution_width}x{self.resolution_height}')
 
     def close(self):
+        """关闭所有连接，并杀掉设备上的 scrcpy 进程，确保下次重连时端口干净"""
         try:
             self._control_conn.close()
+        except Exception:
+            pass
+        try:
             self._video_conn.close()
+        except Exception:
+            pass
+        try:
             self._shell_conn.close()
-        except:
+        except Exception:
+            pass
+        # 杀掉设备端 scrcpy 进程，释放 local abstract socket
+        try:
+            self.device.shell('pkill -f scrcpy', check=False)
+        except Exception:
             pass
 
     def __del__(self):
@@ -100,9 +112,20 @@ class ScrcpyServer:
         # 获取设备对象
         device = self.device
 
-        # 🚀 终极修复 1：杀掉所有的 scrcpy 僵尸进程！释放 Socket 端口！
+        # 杀掉所有旧的 scrcpy 进程，释放 local abstract socket 端口
+        # 必须等待进程完全退出，否则新连接会接收到残留的 H.264 数据流，导致画面错位
         try:
-            device.shell('pkill -f scrcpy', check=False)
+            device.shell('pkill -9 -f scrcpy', check=False)
+        except Exception:
+            pass
+        import time
+        time.sleep(0.5)  # 等待进程退出 & socket 释放
+        # 二次确认：如果还有残留进程，再杀一次
+        try:
+            result = device.shell('pgrep -f scrcpy', check=False)
+            if result and result.strip():
+                device.shell('kill -9 ' + result.strip().replace('\n', ' '), check=False)
+                time.sleep(0.3)
         except Exception:
             pass
 
@@ -223,9 +246,14 @@ class ScrcpyServer:
                         self.controller.up(int(xP * width), int(yP * height), width, height)
                     elif message_type == 'keyEvent':
                         event_number = message['data']['eventNumber']
-                        # 通过 scrcpy 控制协议发送按键（兼容雷电等模拟器）
-                        self.controller.key(KeyeventAction.DOWN, event_number, 0, MetaState.NONE)
-                        self.controller.key(KeyeventAction.UP, event_number, 0, MetaState.NONE)
+                        # 系统导航键（返回/主页/最近任务等）通过 adb 命令发送
+                        # 部分模拟器（如雷电）对 scrcpy INJECT_KEYCODE 支持不完善
+                        _ADB_FALLBACK_KEYS = {3, 4, 82, 187, 224, 223}  # HOME, BACK, MENU, APP_SWITCH, WAKEUP, SLEEP
+                        if event_number in _ADB_FALLBACK_KEYS:
+                            self.device.shell(f'input keyevent {event_number}')
+                        else:
+                            self.controller.key(KeyeventAction.DOWN, event_number, 0, MetaState.NONE)
+                            self.controller.key(KeyeventAction.UP, event_number, 0, MetaState.NONE)
                     elif message_type == 'text':
                         text = message['detail']
                         self.device.shell(f'am broadcast -a SONIC_KEYBOARD --es msg \'{text}\'')
