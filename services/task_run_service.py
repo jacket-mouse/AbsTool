@@ -156,13 +156,12 @@ async def execute_task(
                         stdout_done.set()
 
                 def read_stderr_sync():
-                    nonlocal has_error
                     try:
                         for line in process.stderr:
                             text = line.decode("utf-8", errors="replace").rstrip()
                             if text:
-                                has_error = True
-                                f = asyncio.run_coroutine_threadsafe(push("error", f"[stderr] {text}"), loop)
+                                # stderr 仅作为警告日志输出，不直接标记失败，以退出码为准
+                                f = asyncio.run_coroutine_threadsafe(push("warning", f"[stderr] {text}"), loop)
                                 try:
                                     f.result(timeout=10)
                                 except Exception:

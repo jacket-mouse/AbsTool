@@ -12,6 +12,7 @@ from core.database import get_db
 from core.user_context import get_current_user_id
 from services.task_service import TaskService
 from services.task_run_service import execute_task, get_run_queue, stop_run
+from services.scheduler_service import add_or_update_job, remove_job
 from schemas.task import TaskListRequest, TaskCreateRequest, TaskUpdateRequest
 from models.task_info import TaskInfo
 from models.script_template_rel import ScriptTemplateRel
@@ -43,6 +44,8 @@ def create_task(request: TaskCreateRequest, service: TaskService = Depends(get_t
     try:
         user_id = get_current_user_id()
         dto = service.create_task(request, user_id)
+        # 同步调度器：如果是 CRON 类型，注册定时 job
+        add_or_update_job(dto.task_id)
         return {"success": True, "data": dto.model_dump(by_alias=True)}
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -55,6 +58,8 @@ def update_task(request: TaskUpdateRequest, service: TaskService = Depends(get_t
         dto = service.update_task(request)
         if dto is None:
             return {"success": False, "message": "任务不存在"}
+        # 同步调度器：更新 cron 表达式或状态变更时刷新 job
+        add_or_update_job(dto.task_id)
         return {"success": True, "data": dto.model_dump(by_alias=True)}
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -64,6 +69,8 @@ def update_task(request: TaskUpdateRequest, service: TaskService = Depends(get_t
 @router.delete("/delete/{task_id}")
 def delete_task(task_id: str, service: TaskService = Depends(get_task_service)):
     try:
+        # 先移除调度 job，再删除数据库记录
+        remove_job(task_id)
         service.delete_task(task_id)
         return {"success": True, "data": None}
     except Exception as e:

@@ -1,4 +1,5 @@
 import sys
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from loguru import logger
 from core.exceptions import AppException
 from middleware.auth_middleware import AuthMiddleware
 from middleware.logging_middleware import LoggingMiddleware
+from services.scheduler_service import init_scheduler, shutdown_scheduler
 
 # 配置 loguru：确保在 Windows + uvicorn reload 子进程中也能正常输出日志
 logger.remove()
@@ -18,7 +20,16 @@ from routers import log_router
 from ws_handlers.script_debug_ws import script_debug_ws_handler
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    # 启动时：初始化定时调度器
+    init_scheduler()
+    yield
+    # 关闭时：停止调度器
+    shutdown_scheduler()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 # 全局异常处理器
