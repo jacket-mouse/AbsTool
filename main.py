@@ -10,6 +10,7 @@ from core.exceptions import AppException
 from middleware.auth_middleware import AuthMiddleware
 from middleware.logging_middleware import LoggingMiddleware
 from services.scheduler_service import init_scheduler, shutdown_scheduler
+import uvicorn
 
 # 配置 loguru：确保在 Windows + uvicorn reload 子进程中也能正常输出日志
 logger.remove()
@@ -80,7 +81,6 @@ async def ws_script_debug(websocket: WebSocket):
     await script_debug_ws_handler(websocket)
 
 if __name__ == "__main__":
-    import uvicorn
     # 配置 reload_excludes 排除特定文件或文件夹触发重启
     # 使用 watchfiles 重载器 + asyncio 事件循环，避免 Windows 下 WinError 10038
     uvicorn.run(
