@@ -1,6 +1,5 @@
 # ============================================================
 # 自动生成的 Android 行为模拟脚本 (State Machine 核心引擎驱动)
-# 关键配置区域（由生成器自动填充，请勿手动修改标注行）
 # ============================================================
 import re
 
@@ -495,7 +494,7 @@ def run_script():
                         new_node_data = json.loads(override_code)
                         # 更新当前在主循环里正在处理的 node_data（因为它们是指向同一个字典的引用，或者你可以使用 global 更新 _FLOW_GRAPH_）
                         _FLOW_GRAPH_[current_node_id].update(new_node_data)
-                        print(json.dumps({"type": "log", "message": f"✨ 成功应用临时覆盖参数！"}, ensure_ascii=False),
+                        print(json.dumps({"type": "log", "message": f"成功应用临时覆盖参数！"}, ensure_ascii=False),
                               flush=True)
                     except Exception as e:
                         print(json.dumps({"type": "error", "message": f"应用覆盖参数失败: {e}"}, ensure_ascii=False),
@@ -588,7 +587,7 @@ def run_script():
         elif action_type != "unknown":
             print(json.dumps({"type": "log", "message": f"未知的动作类型: {action_type}"}, ensure_ascii=False), flush=True)
 
-        # 🌟 如果当前是 Loop 节点且决定走 Body，把它自己压入栈
+        # 如果当前是 Loop 节点且决定走 Body，把它自己压入栈
         if action_type in ["loop"] and isinstance(result, str) and result in ["Body"]:
             call_stack.append(current_node_id)
 
@@ -625,7 +624,7 @@ def run_script():
         # 如果发现没路走了（current_node_id 为空），看看栈里有没有
         if not current_node_id and call_stack:
             current_node_id = call_stack.pop()  # 弹出栈顶的循环节点，强制跳回去！
-            print(json.dumps({"type": "log", "message": f"↩️ 触发隐式回弹，返回循环节点: {current_node_id}"},
+            print(json.dumps({"type": "log", "message": f"触发隐式回弹，返回循环节点: {current_node_id}"},
                                      ensure_ascii=False), flush=True)
 
     if step_count >= max_total_steps:

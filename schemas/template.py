@@ -59,3 +59,14 @@ class TemplateUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     scriptIds: Optional[List[str]] = None
+
+
+class TemplateBatchRunRequest(BaseModel):
+    templateIds: List[str] = Field(default_factory=list)
+    deviceId: Optional[str] = "local"
+
+
+class TemplateBatchRunResponse(BaseModel):
+    runId: str
+    templateCount: int
+    scriptCount: int
