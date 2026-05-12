@@ -1,7 +1,6 @@
 import asyncio
 import json
 from loguru import logger
-import os
 import socket
 import struct
 from pathlib import Path
