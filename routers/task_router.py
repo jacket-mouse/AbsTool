@@ -4,7 +4,8 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 from sqlalchemy import asc
 
@@ -47,8 +48,13 @@ def create_task(request: TaskCreateRequest, service: TaskService = Depends(get_t
         # 同步调度器：如果是 CRON 类型，注册定时 job
         add_or_update_job(dto.task_id)
         return {"success": True, "data": dto.model_dump(by_alias=True)}
+    except ValueError as e:
+        status_code = 401 if "登录" in str(e) else 400
+        logger.warning(f"Create task failed: {e}")
+        return JSONResponse(status_code=status_code, content={"success": False, "message": str(e)})
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        logger.exception("Create task failed")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 
 # ─── 3. PUT /api/task/update ─────────────────────────────────────────────────
@@ -70,11 +76,15 @@ def update_task(request: TaskUpdateRequest, service: TaskService = Depends(get_t
 def delete_task(task_id: str, service: TaskService = Depends(get_task_service)):
     try:
         # 先移除调度 job，再删除数据库记录
-        remove_job(task_id)
         service.delete_task(task_id)
+        remove_job(task_id)
         return {"success": True, "data": None}
+    except ValueError as e:
+        logger.warning(f"Delete task failed: {e}")
+        return JSONResponse(status_code=404, content={"success": False, "message": str(e)})
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        logger.exception("Delete task failed")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 
 # ─── 5. POST /api/task/run/{taskId} — 启动任务 ──────────────────────────────

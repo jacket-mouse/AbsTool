@@ -3,6 +3,8 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -69,8 +71,15 @@ def delete_template(template_id: str, service: TemplateService = Depends(get_tem
     try:
         service.delete_template(template_id)
         return {"success": True, "data": None}
+    except ValueError as e:
+        logger.warning(f"Delete template failed: {e}")
+        return JSONResponse(status_code=404, content={"success": False, "message": str(e)})
+    except RuntimeError as e:
+        logger.warning(f"Delete template failed: {e}")
+        return JSONResponse(status_code=409, content={"success": False, "message": str(e)})
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        logger.exception("Delete template failed")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 
 # 前端请求参数示例:

@@ -6,8 +6,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from models.task_info import TaskInfo
+from models.script_template_rel import ScriptTemplateRel
+from models.script_template import ScriptTemplate
+from models.script_execlog import ScriptExecLog
 from schemas.task import TaskDto, TaskListRequest, TaskListResponse, TaskCreateRequest, TaskUpdateRequest
 from core.user_context import get_current_user_id
+
+_ = ScriptTemplateRel
 
 
 class TaskService:
@@ -42,18 +47,32 @@ class TaskService:
         return TaskListResponse(list=[self._to_dto(t) for t in records], total=total)
 
     def create_task(self, request: TaskCreateRequest, user_id: str) -> TaskDto:
+        if not user_id:
+            raise ValueError("未登录或登录已过期")
+        template_exists = (
+            self.db.query(ScriptTemplate.template_id)
+            .filter(ScriptTemplate.template_id == request.template_id)
+            .first()
+        )
+        if not template_exists:
+            raise ValueError("模板不存在")
+
         task = TaskInfo()
         task.task_id = uuid.uuid4().hex
         task.name = request.name
         task.template_id = request.template_id
-        task.cron_expression = request.cron_expression
-        task.device_id = request.device_id
+        task.cron_expression = request.cron_expression or ""
+        task.device_id = request.device_id or "local"
         task.status = "ENABLE"
         task.type = request.type
         task.creator = user_id
-        self.db.add(task)
-        self.db.commit()
-        self.db.refresh(task)
+        try:
+            self.db.add(task)
+            self.db.commit()
+            self.db.refresh(task)
+        except Exception:
+            self.db.rollback()
+            raise
         return self._to_dto(task)
 
     def update_task(self, request: TaskUpdateRequest) -> Optional[TaskDto]:
@@ -77,8 +96,16 @@ class TaskService:
         return self._to_dto(task)
 
     def delete_task(self, task_id: str) -> None:
-        self.db.query(TaskInfo).filter(TaskInfo.task_id == task_id).delete()
-        self.db.commit()
+        task = self.db.query(TaskInfo).filter(TaskInfo.task_id == task_id).first()
+        if not task:
+            raise ValueError("任务不存在")
+        try:
+            self.db.query(ScriptExecLog).filter(ScriptExecLog.task_id == task_id).delete(synchronize_session=False)
+            self.db.delete(task)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def update_task_status(self, task_id: str, status: str) -> None:
         task = self.db.query(TaskInfo).filter(TaskInfo.task_id == task_id).first()

@@ -10,6 +10,7 @@ from core.user_context import get_current_user_id
 from models.script_info import ScriptInfo
 from models.script_template import ScriptTemplate
 from models.script_template_rel import ScriptTemplateRel
+from models.task_info import TaskInfo
 from schemas.template import (
     TemplateDto,
     TemplateListDto,
@@ -105,9 +106,20 @@ class TemplateService:
 
     def delete_template(self, template_id: str) -> None:
         template = self.db.query(ScriptTemplate).filter(ScriptTemplate.template_id == template_id).first()
-        if template:
+        if not template:
+            raise ValueError("模板不存在")
+
+        task_count = self.db.query(TaskInfo).filter(TaskInfo.template_id == template_id).count()
+        if task_count:
+            raise RuntimeError("有引用该模板的任务，请先删除任务")
+
+        try:
+            self.db.query(ScriptTemplateRel).filter(ScriptTemplateRel.template_id == template_id).delete(synchronize_session=False)
             self.db.delete(template)
             self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def get_template_detail(self, template_id: str) -> TemplateDto:
         template = self.db.query(ScriptTemplate).filter(ScriptTemplate.template_id == template_id).first()
