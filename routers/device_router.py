@@ -109,8 +109,7 @@ def dump_ui(req: DumpRequest):
 
         # 将截图转为 Base64
         buffered = io.BytesIO()
-        # 注意：因为你的前端硬编码了 `data:image/png`，这里必须保存为 PNG 格式。
-        # 如果觉得接口响应慢，建议前端改成 image/jpeg，这里 format="JPEG", quality=80 压缩处理
+        # 必须保存为 PNG 格式。
         image.save(buffered, format="PNG")
 
         # 获取纯 Base64 字符串 (不带 data:image 前缀，交由前端拼接)

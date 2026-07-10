@@ -1,6 +1,5 @@
-# ============================================================
 # 自动生成的 Android 行为模拟脚本 (State Machine 核心引擎驱动)
-# ============================================================
+
 import re
 
 import uiautomator2 as u2
@@ -104,7 +103,7 @@ def handle_swipe(device, node):
         dur = float(steps_str) * 0.005
     except Exception:
         dur = 0.25
-    device.swipe_ext("up", scale=0.8)
+    # device.swipe_ext("up", scale=0.8)
     device.swipe(int(sx), int(sy), int(ex), int(ey), duration=dur)
 
 # 输入
@@ -419,7 +418,7 @@ def handle_loop(device, node, current_node_id):
         return "R"  # 告诉主引擎顺着 Completed 端口走
 
 
-# --- 2. 注册动作字典 ---
+# 注册动作字典
 ACTION_DISPATCHER = {
     "click": handle_click,
     "longPress": handle_long_press,

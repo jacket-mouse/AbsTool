@@ -9,7 +9,6 @@ import re
 import subprocess
 import tempfile
 import threading
-import uuid
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -18,7 +17,7 @@ from services.minio_service import MinioFileService
 import sys
 PYTHON_BIN = sys.executable
 
-# ─── 全局运行实例注册表 ─────────────────────────────────────────────────────
+# 全局运行实例注册表www
 _run_queues: Dict[str, asyncio.Queue] = {}        # run_id → SSE 日志队列
 _run_processes: Dict[str, subprocess.Popen] = {}  # run_id → 当前子进程
 _run_cancelled: Dict[str, bool] = {}              # run_id → 是否已被取消
@@ -83,7 +82,7 @@ async def execute_task(
 
             await push("info", f"── 正在执行第 {idx}/{len(script_py_paths)} 个脚本: {py_path}")
 
-            # 1. 从 MinIO 拉取 Python 脚本内容
+            # 从 MinIO 拉取 Python 脚本内容
             try:
                 py_content = minio.get_file_content(py_path)
                 if not py_content:
@@ -95,7 +94,7 @@ async def execute_task(
                 has_error = True
                 continue
 
-            # 2. 运行时注入设备序列号（覆盖脚本中生成时写死的空串）
+            # 运行时注入设备序列号（覆盖脚本中生成时写死的空串）
             if device_id and device_id != "local":
                 py_content = re.sub(
                     r'^(_DEVICE_SERIAL_\s*=\s*)(""|\'\')',
@@ -105,14 +104,14 @@ async def execute_task(
                     flags=re.MULTILINE,
                 )
 
-            # 3. 写入临时文件
+            # 写入临时文件
             tmp_file = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
                     f.write(py_content)
                     tmp_file = f.name
 
-                # 3. 启动子进程执行（-u 禁用缓冲，保证实时输出）
+                # 启动子进程执行（-u 禁用缓冲，保证实时输出）
                 env = os.environ.copy()
                 env["PYTHONIOENCODING"] = "utf-8"
                 # 将设备序列号通过环境变量传递给脚本，解决多设备时连接失败的问题
@@ -212,7 +211,7 @@ async def execute_task(
 
         await push("info", f"◼ 任务运行结束，状态: {exec_status}")
 
-        # 4. 将完整日志上传到 MinIO
+        # 将完整日志上传到 MinIO
         log_text = "\n".join(all_logs)
         log_file_path = f"logs/tasks/{task_id}/{run_id}.log"
         try:
@@ -221,7 +220,7 @@ async def execute_task(
             print(f"[TaskRun] 上传日志到 MinIO 失败: {e}")
             log_file_path = ""
 
-        # 5. 写入 script_exec_log 日志表
+        # 写入 script_exec_log 日志表
         try:
             from core.database import SessionLocal
             from models.script_execlog import ScriptExecLog
